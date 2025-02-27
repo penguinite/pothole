@@ -215,3 +215,36 @@ const urlRoutes* = @[
   ("/auth/sign_in", "POST", signInPost),
   ("/auth/logout", "GET", logoutSession)
 ]
+
+# From somewhere in Pothole
+import pothole/api/[instance, apps, oauth, nodeinfo, accounts, email, followed_tags, timelines, statuses]
+
+# These are in order of implementation by the way.
+
+const apiRoutes* =  @[
+  # (URLRoute, HttpMethod, RouteProcedure)
+  ("/api/v1/instance", "GET", v1InstanceView),
+  ("/api/v2/instance", "GET", v2InstanceView),
+  ("/api/v1/instance/rules", "GET", v1InstanceRules),
+  ("/api/v1/instance/extended_description", "GET", v1InstanceExtendedDescription),
+  ("/api/v1/apps", "POST", v1Apps),
+  ("/api/v1/apps/verify_credentials", "GET", v1AppsVerify),
+  ("/oauth/authorize", "GET" , oauthAuthorizeGET),
+  ("/oauth/authorize", "POST" , oauthAuthorizePOST),
+  ("/oauth/token",  "POST", oauthToken),
+  ("/oauth/revoke",  "POST", oauthRevoke),
+  ("/.well-known/oauth-authorization-server", "GET", oauthInfo),
+  ("/.well-known/nodeinfo", "GET", resolveNodeinfo),
+  ("/nodeinfo/2.0", "GET", nodeInfo2x0),
+  ("/api/v1/emails/confirmations", "POST", emailConfirmation),
+  ("/api/v1/accounts/verify_credentials",  "GET", accountsVerifyCredentials),
+  ("/api/v1/accounts/@id", "GET", accountsGet),
+  ("/api/v1/accounts", "GET", accountsGetMultiple),
+  ("/api/v1/followed_tags", "GET", followedTags),
+  ("/api/v1/timelines/home", "GET", timelinesHome),
+  ("/api/v1/statuses/@id/reblog", "POST", boostStatus),
+  ("/api/v1/statuses/@id/unreblog", "POST", unboostStatus),
+  ("/api/v1/statuses/@id/bookmark", "POST", bookmarkStatus),
+  ("/api/v1/statuses/@id/unbookmark", "POST", unbookmarkStatus),
+  ("/api/v1/statuses/@id", "GET", viewStatus),
+]

@@ -19,7 +19,7 @@
 import quark/[db]
 
 # From somewhere in Pothole
-import pothole/[routes, lib, conf, database, api, routeutils]
+import pothole/[routes, lib, conf, database, routes, routeutils]
 
 # From standard library
 from std/strutils import join
