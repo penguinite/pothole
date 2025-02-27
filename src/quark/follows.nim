@@ -151,6 +151,10 @@ proc getHomeTimeline*(db: DbConn, user: string, limit: var int = 20): seq[string
   # TODO: This does not include posts that have boosts... Too bad!
   return result
 
+proc getTagTimeline*(db: DbConn, tag: string, limit: var int = 20, local = true, remote = true): seq[string] =
+  ## Returns a list of IDs to posts in a hashtag.
+  return result
+
 ## Test suite!
 #[
 

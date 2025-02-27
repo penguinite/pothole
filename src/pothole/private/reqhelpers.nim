@@ -1,5 +1,6 @@
 import std/tables
-import quark/strextra
+import quark/[strextra, apps, oauth, auth_codes]
+import db_connector/db_postgres
 import mummy, mummy/multipart
 from std/strutils import split
 
@@ -130,3 +131,35 @@ proc getAuthHeader*(req: Request): string =
 
   if len(split) > 1: return split[high(split)].cleanString()
   else: return split[0].cleanString()
+
+proc verifyAccess*(req: Request, db: DbConn, scope: string) =
+  runnableExamples:
+    ## How to use verifyAccess to ensure a client
+    ## is authenticated with the scope "read:statuses"
+    try:
+      req.verifyAccess(db, "read:statuses")
+    except CatchableError as err:
+      respJsonError(err.msg, 401)
+
+  # Let's do authentication first...
+  if not req.authHeaderExists():
+    raise newException(CatchableError, "The access token is invalid (No auth header present)")
+    
+  let token = req.getAuthHeader()
+
+  # Check if the token exists in the db
+  if not db.tokenExists(token):
+    raise newException(CatchableError, "The access token is invalid (token not found in db)")
+        
+  # Check if the token has a user attached
+  if not db.tokenUsesCode(token):
+    raise newException(CatchableError, "The access token is invalid (token isn't using an auth code)")
+        
+  # Double-check the auth code used.
+  if not db.authCodeValid(db.getTokenCode(token)):
+    raise newException(CatchableError, "The access token is invalid (auth code used by token isn't valid)")
+    
+  # Check if the client registered to the token
+  # has a public oauth scope.
+  if not db.hasScope(db.getTokenApp(token), scope):
+    raise newException(CatchableError, "The access token is invalid (missing scope) ")
