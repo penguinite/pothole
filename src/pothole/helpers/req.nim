@@ -1,24 +1,17 @@
-import std/tables
 import quark/[strextra, apps, oauth, auth_codes]
 import db_connector/db_postgres
 import mummy, mummy/multipart
+import std/[tables, json]
 from std/strutils import split
+export tables
 
-proc isValidQueryParam*(req: Request, query: string): bool =
+proc queryParamExists*(req: Request, query: string): bool =
   ## Check if a query parameter (such as "?query=parameter") is valid and not empty
   return not req.queryParams[query].isEmptyOrWhitespace()
 
-proc getQueryParam*(req: Request, query: string): string =
-  ## Returns a query parameter (such as "?query=parameter")
-  return req.queryParams[query]
-
-proc isValidPathParam*(req: Request, path: string): bool =
+proc pathParamExists*(req: Request, path: string): bool =
   ## Checks if a path parameter such as /users/{user} is valid and not empty
   return not req.pathParams[path].isEmptyOrWhitespace()
-
-proc getPathParam*(req: Request, path: string): string =
-  ## Returns a path parameter such as /users/{user}
-  return req.pathParams[path]
 
 type
   MultipartEntries* = Table[string, string]
@@ -42,13 +35,9 @@ proc unrollMultipart*(req: Request): MultipartEntries =
     result[entry.name] = val
   return result
 
-proc isValidMultipartParam*(mp: MultipartEntries, param: string): bool =
+proc multipartParamExists*(mp: MultipartEntries, param: string): bool =
   ## Returns a parameter submitted via a HTML form
   return mp.hasKey(param) and not mp[param].isEmptyOrWhitespace()
-
-proc getMultipartParam*(mp: MultipartEntries, param: string): string =
-  ## Checks if a parameter submitted via an HTMl form is valid and not empty
-  return mp[param]
 
 proc unrollForm*(req: Request): FormEntries =
   let entries = req.body.smartSplit('&')
@@ -73,15 +62,17 @@ proc unrollForm*(req: Request): FormEntries =
   
   return result
 
-proc isValidFormParam*(mp: FormEntries, param: string): bool =
+proc formParamExists*(fe: FormEntries, param: string): bool =
   ## Returns a parameter submitted via a HTML form
-  return mp.hasKey(param) and not mp[param].isEmptyOrWhitespace()
+  return fe.hasKey(param) and not fe[param].isEmptyOrWhitespace()
 
-proc getFormParam*(mp: FormEntries, param: string): string =
-  ## Checks if a parameter submitted via an HTMl form is valid and not empty
-  return mp[param]
 
 proc hasSessionCookie*(req: Request): bool =
+  ## Checks if the request has a Session cookie for authorization.
+  
+  # The cookie header might contain other cookies.
+  # So we need to parse this header.
+  # The header looks like so: Name=Value; Name=Value
   if not req.headers.contains("Cookie"):
     return false
 
@@ -89,17 +80,26 @@ proc hasSessionCookie*(req: Request): bool =
     val = ""
     flag = false
   for item in req.headers["Cookie"].smartSplit('='):
-    if flag:
+    case flag:
+    of false:
+      if item == "session":
+        flag = true
+        continue
+    of true:
       val = item
-      flag = false
-    if item == "session":
-      flag = true
+      break
   
-  if val.isEmptyOrWhitespace() and val != "null":
-    return false
-  return true
+  return not (val.isEmptyOrWhitespace() and val != "null")
+
+proc hasValidStrKey*(j: JsonNode, k: string): bool =
+  ## Checks if a key in a json node object is a valid string.
+  ## It primarily checks for existence, kind, and emptyness.
+  try: return j.hasKey(k) and j[k].kind == JString and not j[k].getStr().isEmptyOrWhitespace()
+  except: return false
+
 
 proc fetchSessionCookie*(req: Request): string = 
+  ## Fetches the session cookie (if it exists) from a request.
   var flag = false
   for val in req.headers["Cookie"].smartSplit('='):
     if flag:
@@ -108,6 +108,10 @@ proc fetchSessionCookie*(req: Request): string =
       flag = true
 
 proc getContentType*(req: Request): string =
+  ## Returns the content-type of a request.
+  ## 
+  ## This also does some extra checks for if the content-type
+  ## has other info (like MIME boundary info) and strips it out
   result = "application/x-www-form-urlencoded"
   if req.headers.contains("Content-Type"):
     result = req.headers["Content-Type"]
@@ -119,23 +123,23 @@ proc getContentType*(req: Request): string =
   if ';' in result:
     result = result.split(';')[0]
 
-
-proc deleteSessionCookie*(): string = 
-  return "session=\"\"; path=/; Max-Age=0"
-
 proc authHeaderExists*(req: Request): bool =
+  ## Checks if the auth header exists, which is required for some API routes.
   return req.headers.contains("Authorization") and not isEmptyOrWhitespace(req.headers["Authorization"])
 
 proc getAuthHeader*(req: Request): string =
+  ## Gets the auth from a request header if it exists
   let split = req.headers["Authorization"].split("Bearer")
 
   if len(split) > 1: return split[high(split)].cleanString()
   else: return split[0].cleanString()
 
 proc verifyAccess*(req: Request, db: DbConn, scope: string) =
+  ## A simple helper proc for verifying access to API routes.
+  ## 
+  ## Heres how to use verifyAccess to ensure a client
+  ## is authenticated with the scope "read:statuses"
   runnableExamples:
-    ## How to use verifyAccess to ensure a client
-    ## is authenticated with the scope "read:statuses"
     try:
       req.verifyAccess(db, "read:statuses")
     except CatchableError as err:

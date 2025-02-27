@@ -14,14 +14,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Pothole. If not, see <https://www.gnu.org/licenses/>. 
 # api/instance.nim:
-## This module contains all the routes for the instance method in the api
+## This module contains all the code for the API entities.
 
 
 # From somewhere in Quark
 import quark/[users, posts, fields, follows, reactions, boosts, bookmarks, strextra, tag]
 
 # From somewhere in Pothole
-import pothole/[conf, database, routeutils, lib, assets]
+import pothole/[conf, database, lib, assets]
+import pothole/helpers/routes
 
 # From somewhere in the standard library
 import std/[json, times]

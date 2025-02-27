@@ -20,7 +20,8 @@
 import quark/[users, sessions, posts]
 
 # From somewhere in Pothole
-import pothole/[lib, conf, routeutils, database]
+import pothole/[lib, conf, database]
+import pothole/helpers/[routes, resp]
 
 # From somewhere in the standard library
 import std/[json]

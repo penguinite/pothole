@@ -21,7 +21,10 @@
 import quark/[tag, apps, oauth, auth_codes]
 
 # From somewhere in Pothole
-import pothole/[database, routeutils], pothole/private/apientities
+import pothole/[database]
+
+# Helper procs
+import pothole/helpers/[routes, req, resp, entities]
 
 # From somewhere in the standard library
 import std/[json]
@@ -38,7 +41,7 @@ proc followedTags*(req: Request) =
   # TODO: Implement pagination *properly*
   # If any of these are present, then just error out.
   for i in @["max_id", "since_id", "min_id"]:
-    if req.isValidQueryParam(i):
+    if req.queryParamExists(i):
       respJson("You're using a pagination feature and I honest to goodness WILL NOT IMPLEMENT IT NOW", 500)
   
   # Same thing for the Link http header

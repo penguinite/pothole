@@ -19,7 +19,8 @@
 import quark/[db]
 
 # From somewhere in Pothole
-import pothole/[routes, lib, conf, database, routes, routeutils]
+import pothole/[lib, conf, database, web]
+import pothole/helpers/routes
 
 # From standard library
 from std/strutils import join
@@ -76,16 +77,11 @@ except CatchableError as err:
   error "Couldn't initalize the database: ", err.msg
 
 var router: Router
-# Add API routes
-for route in apiRoutes:
+
+# Add API & web routes
+for route in mummyRoutes:
   router.addRoute(route[1], route[0], route[2])
   router.addRoute(route[1], route[0] & "/", route[2]) # Trailing slash fix.
-
-# Add URL routes
-for route in urlRoutes:
-  router.addRoute(route[1], route[0], route[2])
-  router.addRoute(route[1], route[0] & "/", route[2]) # Trailing slash fix.
-
 router.get("/", serveHome)
 
 log "Serving on http://localhost:" & $port

@@ -21,7 +21,10 @@
 import quark/[follows, apps, oauth, auth_codes, strextra]
 
 # From somewhere in Pothole
-import pothole/[database, routeutils, conf], pothole/private/apientities
+import pothole/[database, conf]
+
+# Helper procs
+import pothole/helpers/[req, resp, routes, entities]
 
 # From somewhere in the standard library
 import std/[json]
@@ -37,7 +40,7 @@ proc timelinesHome*(req: Request) =
   # TODO: Implement pagination *properly*
   # If any of these are present, then just error out.
   for i in @["max_id", "since_id", "min_id"]:
-    if req.isValidQueryParam(i):
+    if req.queryParamExists(i):
       respJson("You're using a pagination feature and I honest to goodness WILL NOT IMPLEMENT IT NOW", 500)
   
   # Now we can begin actually implementing the API
@@ -46,8 +49,8 @@ proc timelinesHome*(req: Request) =
   # If ?limit isn't present then default to 20 posts
   var limit = 20
 
-  if req.isValidQueryParam("limit"):
-    limit = parseInt(req.getQueryParam("limit"))
+  if req.queryParamExists("limit"):
+    limit = parseInt(req.queryParams["limit"])
 
   if limit > 40:
     # MastoAPI docs sets a limit of 40.
@@ -96,8 +99,8 @@ proc timelinesHashtag*(req: Request) =
   # If any of these are present, then just error out.
 
   for i in @["max_id", "since_id", "min_id", "any", "all", "none"]:
-    if req.isValidQueryParam(i):
-      respJson("You're using a pagination feature and I honest to goodness WILL NOT IMPLEMENT IT NOW", 500)
+    if req.queryParamExists(i):
+      respJson("You're using an unsupported feature and I honest to goodness WILL NOT IMPLEMENT IT NOW", 500)
   
   # These booleans control which types of post to show
   # Fx. if local is disabled then we won't include local posts
@@ -109,13 +112,13 @@ proc timelinesHashtag*(req: Request) =
   # local, which when set to true, tells the server to include only local posts
   # and remote which does the same as local but with remote posts instead.
   # Both are set to false...
-  if req.isValidQueryParam("local"):
-    local = parseBool(req.getQueryParam("local"))
-    remote = not parseBool(req.getQueryParam("local"))
+  if req.queryParamExists("local"):
+    local = parseBool(req.queryParams["local"])
+    remote = not parseBool(req.queryParams["local"])
 
-  if req.isValidQueryParam("remote"):
-    remote = parseBool(req.getQueryParam("remote"))
-    local = not parseBool(req.getQueryParam("remote"))
+  if req.queryParamExists("remote"):
+    remote = parseBool(req.queryParams["remote"])
+    local = not parseBool(req.queryParams["remote"])
   
   var onlyMedia = false
   # TODO: Implement the "only_media" query parameter for this API endpoint.
@@ -124,8 +127,8 @@ proc timelinesHashtag*(req: Request) =
   # If ?limit isn't present then default to 20 posts
   var limit = 20
 
-  if req.isValidQueryParam("limit"):
-    limit = parseInt(req.getQueryParam("limit"))
+  if req.queryParamExists("limit"):
+    limit = parseInt(req.queryParams["limit"])
 
   if limit > 40:
     # MastoAPI docs sets a limit of 40.

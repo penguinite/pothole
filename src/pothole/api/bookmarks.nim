@@ -18,8 +18,8 @@
 
 # From somewhere in Pothole
 import quark/[apps, oauth, auth_codes, bookmarks]
-import pothole/[routeutils, database, conf]
-import pothole/private/apientities
+import pothole/[database, conf]
+import pothole/helpers/[entities, req, resp, routes]
 from std/strutils import parseInt
 
 # From somewhere in the standard library

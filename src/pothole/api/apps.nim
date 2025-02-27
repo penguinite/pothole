@@ -20,7 +20,10 @@
 import quark/[apps, oauth]
 
 # From somewhere in Pothole
-import pothole/[database, routeutils]
+import pothole/[database]
+
+# Helper procs
+import pothole/helpers/[req, resp, routes]
 
 # From somewhere in the standard library
 import std/[json, strutils]
@@ -54,38 +57,38 @@ proc v1Apps*(req: Request) =
   case contentType:
   of "application/x-www-form-urlencoded":
     var fm = req.unrollForm()
-    if not fm.isValidFormParam("client_name") or not fm.isValidFormParam("redirect_uris"):
+    if not fm.formParamExists("client_name") or not fm.formParamExists("redirect_uris"):
       respJsonError("Missing required parameters.")
 
     # Get the website if it exists
-    if fm.isValidFormParam("website"):
-      website = fm.getFormParam("website")
+    if fm.formParamExists("website"):
+      website = fm["website"]
     
     # Get the scopes if they exist
-    if fm.isValidFormParam("scopes"):
-      req_scopes = fm.getFormParam("scopes")
+    if fm.formParamExists("scopes"):
+      req_scopes = fm["scopes"]
 
     # Finally, get the stuff we need.
-    client_name = fm.getFormParam("client_name")
-    redirect_uris = fm.getFormParam("redirect_uris")
+    client_name = fm["client_name"]
+    redirect_uris = fm["redirect_uris"]
   of "multipart/form-data":
     var mp = req.unrollMultipart()
 
     # Check if the required stuff is there
-    if not mp.isValidMultipartParam("client_name") or not mp.isValidMultipartParam("redirect_uris"):
+    if not mp.multipartParamExists("client_name") or not mp.multipartParamExists("redirect_uris"):
       respJsonError("Missing required parameters.")
   
     # Get the website if it exists
-    if mp.isValidMultipartParam("website"):
-      website = mp.getMultipartParam("website")
+    if mp.multipartParamExists("website"):
+      website = mp["website"]
     
     # Get the scopes if they exist
-    if mp.isValidMultipartParam("scopes"):
-      req_scopes = mp.getMultipartParam("scopes")
+    if mp.multipartParamExists("scopes"):
+      req_scopes = mp["scopes"]
 
     # Finally, get the stuff we need.
-    client_name = mp.getMultipartParam("client_name")
-    redirect_uris = mp.getMultipartParam("redirect_uris")
+    client_name = mp["client_name"]
+    redirect_uris = mp["redirect_uris"]
   of "application/json":
     var json: JsonNode = newJNull()
     try:

@@ -21,7 +21,8 @@
 import quark/[strextra, apps, oauth, sessions, auth_codes]
 
 # From somewhere in Pothole
-import pothole/[database, routeutils, conf, assets]
+import pothole/[database, conf, assets]
+import pothole/helpers/[resp, req, routes]
 
 # From somewhere in the standard library
 import std/[json]
@@ -95,7 +96,7 @@ proc redirectToLogin*(req: Request, client, redirect_uri: string, scopes: seq[st
   var headers: HttpHeaders
   # If the client has requested force login then remove the session cookie.
   if force_login:
-    headers["Set-Cookie"] = deleteSessionCookie()
+    headers["Set-Cookie"] = "session=\"\"; path=/; Max-Age=0"
 
   configPool.withConnection config:
     let url = realURL(config)
@@ -108,27 +109,27 @@ proc redirectToLogin*(req: Request, client, redirect_uri: string, scopes: seq[st
 
 proc oauthAuthorizeGET*(req: Request) =
   # If response_type exists
-  if not req.isValidQueryParam("response_type"):
+  if not req.queryParamExists("response_type"):
     respJsonError("Missing required field: response_type")
   
   # If response_type doesn't match "code"
-  if req.getQueryParam("response_type") != "code":
+  if req.queryParams["response_type"] != "code":
     respJsonError("Required field response_type has been set to an invalid value.")
 
   # If client id exists
-  if not req.isValidQueryParam("client_id"):
+  if not req.queryParamExists("client_id"):
     respJsonError("Missing required field: response_type")
 
   # Check if client_id is associated with a valid app
   dbPool.withConnection db:
-    if not db.clientExists(req.getQueryParam("client_id")):
+    if not db.clientExists(req.queryParams["client_id"]):
       respJsonError("Client_id isn't registered to a valid app.")
-  var client_id = req.getQueryParam("client_id")
+  var client_id = req.queryParams["client_id"]
   
   # If redirect_uri exists
-  if not req.isValidQueryParam("redirect_uri"):
+  if not req.queryParamExists("redirect_uri"):
     respJsonError("Missing required field: redirect_uri")
-  var redirect_uri = htmlEscape(req.getQueryParam("redirect_uri"))
+  var redirect_uri = htmlEscape(req.queryParams["redirect_uri"])
 
   # Check if redirect_uri matches the redirect_uri for the app
   dbPool.withConnection db:
@@ -138,11 +139,11 @@ proc oauthAuthorizeGET*(req: Request) =
   var
     scopes = @["read"]
     scopeSeparator = ' '
-  if req.isValidQueryParam("scope"):
+  if req.queryParamExists("scope"):
     # According to API, we can either split by + or space.
     # so we run this to figure it out. Defaulting to spaces if needed
-    scopeSeparator = getSeparator(req.getQueryParam("scope")) 
-    scopes = req.getQueryParam("scope").split(scopeSeparator)
+    scopeSeparator = getSeparator(req.queryParams["scope"])
+    scopes = req.queryParams["scope"].split(scopeSeparator)
   
     for scope in scopes:
       # Then verify if every scope is valid.
@@ -157,9 +158,9 @@ proc oauthAuthorizeGET*(req: Request) =
       respJsonError("An attached scope wasn't specified during app registration.")
   
   var force_login = false
-  if req.isValidQueryParam("force_login"):
+  if req.queryParamExists("force_login"):
     try:
-      force_login = req.getQueryParam("force_login").parseBool()
+      force_login = req.queryParams["force_login"].parseBool()
     except:
       force_login = true
   
@@ -182,27 +183,27 @@ proc oauthAuthorizePOST*(req: Request) =
   let fm = req.unrollForm()
 
   # If response_type exists
-  if not fm.isValidFormParam("response_type"):
+  if not fm.formParamExists("response_type"):
     respJsonError("Missing required field: response_type")
   
   # If response_type doesn't match "code"
-  if fm.getFormParam("response_type") != "code":
+  if fm["response_type"] != "code":
     respJsonError("Required field response_type has been set to an invalid value.")
 
   # If client id exists
-  if not fm.isValidFormParam("client_id"):
+  if not fm.formParamExists("client_id"):
     respJsonError("Missing required field: response_type")
 
   # Check if client_id is associated with a valid app
   dbPool.withConnection db:
-    if not db.clientExists(fm.getFormParam("client_id")):
+    if not db.clientExists(fm["client_id"]):
       respJsonError("Client_id isn't registered to a valid app.")
-  var client_id = fm.getFormParam("client_id")
+  var client_id = fm["client_id"]
   
   # If redirect_uri exists
-  if not fm.isValidFormParam("redirect_uri"):
+  if not fm.formParamExists("redirect_uri"):
     respJsonError("Missing required field: redirect_uri")
-  var redirect_uri = htmlEscape(fm.getFormParam("redirect_uri"))
+  var redirect_uri = htmlEscape(fm["redirect_uri"])
 
   # Check if redirect_uri matches the redirect_uri for the app
   dbPool.withConnection db:
@@ -212,11 +213,11 @@ proc oauthAuthorizePOST*(req: Request) =
   var
     scopes = @["read"]
     scopeSeparator = ' '
-  if fm.isValidFormParam("scope"):
+  if fm.formParamExists("scope"):
     # According to API, we can either split by + or space.
     # so we run this to figure it out. Defaulting to spaces if need
-    scopeSeparator = getSeparator(fm.getFormParam("scope")) 
-    scopes = fm.getFormParam("scope").split(scopeSeparator)
+    scopeSeparator = getSeparator(fm["scope"])
+    scopes = fm["scope"].split(scopeSeparator)
   
     for scope in scopes:
       # Then verify if every scope is valid.
@@ -231,9 +232,9 @@ proc oauthAuthorizePOST*(req: Request) =
       respJsonError("An attached scope wasn't specified during app registration.")
   
   var force_login = false
-  if fm.isValidFormParam("force_login"):
+  if fm.formParamExists("force_login"):
     try:
-      force_login = fm.getFormParam("force_login").parseBool()
+      force_login = fm["force_login"].parseBool()
     except:
       force_login = true
   
@@ -248,7 +249,7 @@ proc oauthAuthorizePOST*(req: Request) =
       req.redirectToLogin(client_id, redirect_uri, scopes, force_login)
       return
 
-  if not fm.isValidFormParam("action"):
+  if not fm.formParamExists("action"):
     req.renderAuthForm(scopes, client_id, redirect_uri)
     return
   
@@ -260,7 +261,7 @@ proc oauthAuthorizePOST*(req: Request) =
         db.getSpecificAuthCode(user, client_id)
       )
 
-  case fm.getFormParam("action").toLowerAscii():
+  case fm["action"].toLowerAscii():
   of "authorized":
     var code = ""
 
@@ -316,21 +317,21 @@ proc oauthToken*(req: Request) =
 
     # Check if the required stuff is there
     for thing in @["client_id", "client_secret", "redirect_uri", "grant_type"]:
-      if not fm.isValidFormParam(thing): 
+      if not fm.formParamExists(thing): 
         respJsonError("Missing required parameter: " & thing)
 
-    grant_type = fm.getFormParam("grant_type")
-    client_id = fm.getFormParam("client_id")
-    client_secret = fm.getFormParam("client_secret")
-    redirect_uri = fm.getFormParam("redirect_uri")
+    grant_type = fm["grant_type"]
+    client_id = fm["client_id"]
+    client_secret = fm["client_secret"]
+    redirect_uri = fm["redirect_uri"]
 
-    if fm.isValidFormParam("code"):
-      code = fm.getFormParam("code")
+    if fm.formParamExists("code"):
+      code = fm["code"]
     
     # According to API, we can either split by + or space.
     # so we run this to figure it out. Defaulting to spaces if need
-    if fm.isValidFormParam("scope"):
-      scopes = fm.getFormParam("scope").split(getSeparator(fm.getFormParam("scope")) )
+    if fm.formParamExists("scope"):
+      scopes = fm["scope"].split(getSeparator(fm["scope"]) )
   of "application/json":
     var json: JsonNode = newJNull()
     try:
@@ -421,12 +422,12 @@ proc oauthRevoke*(req: Request) =
 
     # Check if the required stuff is there
     for thing in @["client_id", "client_secret", "token"]:
-      if not fm.isValidFormParam(thing): 
+      if not fm.formParamExists(thing): 
         respJsonError("Missing required parameter: " & thing)
 
-    client_id = fm.getFormParam("client_id")
-    client_secret = fm.getFormParam("client_secret")
-    token = fm.getFormParam("token")
+    client_id = fm["client_id"]
+    client_secret = fm["client_secret"]
+    token = fm["token"]
   of "application/json":
     var json: JsonNode = newJNull()
     try:

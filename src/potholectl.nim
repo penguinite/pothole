@@ -32,7 +32,7 @@ import cligen, rng
 
 # Disable MRF on non-POSIX builds.
 when defined(posix):
-  import std/[posix, dynlib, mrf]
+  import std/[posix, dynlib], pothole/mrf
 
 proc exec*(cmd: string): string {.discardable.} =
   try:

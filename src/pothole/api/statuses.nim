@@ -21,7 +21,10 @@
 import quark/[posts, apps, oauth, auth_codes, boosts, bookmarks, strextra]
 
 # From somewhere in Pothole
-import pothole/[database, routeutils, conf], pothole/private/apientities
+import pothole/[database, conf]
+
+# Helper procs
+import pothole/helpers/[req,resp,routes,entities]
 
 # From somewhere in the standard library
 import std/[json]
@@ -79,8 +82,8 @@ proc boostStatus*(req: Request) =
     case req.headers["Content-Type"]:
     of "application/x-www-form-urlencoded":
       let form = req.unrollForm()
-      if form.isValidFormParam("visibility"):
-        level = strToLevel(form.getFormParam("visibility"))
+      if form.formParamExists("visibility"):
+        level = strToLevel(form["visibility"])
     of "application/json":
       # I wish the API docs forced developers to use one
       # content-type or the other. Instead of having to

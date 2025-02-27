@@ -17,7 +17,7 @@
 ## This module contains all the routes for the instance method in the api
 
 # From somewhere in Pothole
-import pothole/private/apientities
+import pothole/helpers/entities
 
 # From somewhere in the standard library
 import std/[json]

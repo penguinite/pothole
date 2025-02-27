@@ -19,7 +19,13 @@
 import quark/[users, posts, sessions, crypto]
 
 # From somewhere in Pothole
-import pothole/[conf, assets, database, routeutils, lib]
+import pothole/[conf, assets, database, lib]
+
+# Helper procs!
+import pothole/helpers/[req, routes]
+
+# API routes!
+import pothole/api/[instance, apps, oauth, nodeinfo, accounts, email, followed_tags, timelines, statuses]
 
 # From somewhere in the standard library
 import std/[tables, strutils, times]
@@ -33,7 +39,7 @@ proc signInGet*(req: Request) =
 
   # Remove session cookie from user's browser.
   if req.hasSessionCookie():
-    headers["Set-Cookie"] = deleteSessionCookie()
+    headers["Set-Cookie"] = "session=\"\"; path=/; Max-Age=0"
     # Check if it actually exists in the db before removing.
     #
     # We don't *need* to check, since it's a DELETE FROM statement
@@ -97,13 +103,13 @@ proc signInPost*(req: Request) =
     renderError("Couldn't process requests!")
 
   # Check first if user and password exist.
-  if not fm.isValidFormParam("user") or not fm.isValidFormParam("pass"):
+  if not fm.formParamExists("user") or not fm.formParamExists("pass"):
     renderError("Missing required fields. Make sure the Username and Password fields are filled out properly.")
 
   # Then, see if the user exists at all via handle or email.
   var id = ""
   dbPool.withConnection db:
-    var user = fm.getFormParam("user")
+    var user = fm["user"]
     if db.userEmailExists(user):
       id = db.getUserIdByEmail(user)
     
@@ -135,7 +141,7 @@ proc signInPost*(req: Request) =
     hash = db.getUserPass(id)
   
   # Finally, compare the hashes.
-  if hash != crypto.hash(fm.getFormParam("pass"), salt, kdf):
+  if hash != crypto.hash(fm["pass"], salt, kdf):
     renderError("Invalid password!")
 
   # And then, see if we need to update the hash
@@ -143,7 +149,7 @@ proc signInPost*(req: Request) =
   if kdf != crypto.latestKdf:
     log "Updating password hash from KDF:", $kdf, " to KDF:", crypto.latestKdf, " for user \"", id, "\""
     var newhash = crypto.hash(
-      fm.getFormParam("pass"),
+      fm["pass"],
       salt, crypto.latestKdf
     )
 
@@ -152,7 +158,7 @@ proc signInPost*(req: Request) =
         id, "password", newhash
       )
 
-  if fm.isValidFormParam("rememberme"):
+  if fm.formParamExists("rememberme"):
     var session: string
     let date = utc(now() + 400.days) # 400 days is the upper limit on cookie age for chrome.
     dbPool.withConnection db:
@@ -162,11 +168,11 @@ proc signInPost*(req: Request) =
 
   # If there is no need for redirection
   # then just proceed, and render the "You have logged in!" page
-  if not req.isValidQueryParam("return_to"):
+  if not req.queryParamExists("return_to"):
     renderSuccess("Successful login!")
 
   # User has requested to return to some place.
-  let loc = req.getQueryParam("return_to")
+  let loc = req.queryParams["return_to"]
 
   # If the return_to starts with javascript: or data:
   # then it might be some form of XSS attack and its best to not
@@ -183,7 +189,7 @@ proc logoutSession*(req: Request) =
 
   # Remove session cookie from user's browser.
   if req.hasSessionCookie():
-    headers["Set-Cookie"] = deleteSessionCookie()
+    headers["Set-Cookie"] = "session=\"\"; path=/; Max-Age=0"
     # Check if it actaully exists in the db before removing.
     # In theory this shouldn't matter but its a good thing to do anyway
     dbPool.withConnection db:
@@ -209,20 +215,12 @@ proc serveHome*(req: Request) =
   req.respond(200, headers, getAsset("home.html"))
 
 
-const urlRoutes* = @[
+const mummyRoutes* =  @[
+  # (URLRoute, HttpMethod, RouteProcedure)
   ("/static/style.css", "GET", serveCSS),
   ("/auth/sign_in", "GET", signInGet),
   ("/auth/sign_in", "POST", signInPost),
-  ("/auth/logout", "GET", logoutSession)
-]
-
-# From somewhere in Pothole
-import pothole/api/[instance, apps, oauth, nodeinfo, accounts, email, followed_tags, timelines, statuses]
-
-# These are in order of implementation by the way.
-
-const apiRoutes* =  @[
-  # (URLRoute, HttpMethod, RouteProcedure)
+  ("/auth/logout", "GET", logoutSession),
   ("/api/v1/instance", "GET", v1InstanceView),
   ("/api/v2/instance", "GET", v2InstanceView),
   ("/api/v1/instance/rules", "GET", v1InstanceRules),
