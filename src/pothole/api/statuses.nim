@@ -284,7 +284,7 @@ proc viewStatus*(req: Request) =
   
   configPool.withConnection config:
     # Check if the instance is in lockdown mode.
-    if config.getBoolOrDefault("web", "whitelist_mode", false) or level notin {Public, Unlisted}:
+    if config.getBoolOrDefault(Hi"web", "whitelist_mode", false) or level notin {Public, Unlisted}:
       dbPool.withConnection db:
         try:
           req.verifyAccess(db, "read:statuses")

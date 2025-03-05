@@ -1,5 +1,5 @@
 # Copyright © Leo Gavilieau 2022-2023 <xmoo@privacyrequired.com>
-# Copyright © penguinite 2024 <penguinite@tuta.io>
+# Copyright © penguinite 2024-2025 <penguinite@tuta.io>
 #
 # This file is part of Pothole.
 # 
@@ -15,10 +15,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Pothole. If not, see <https://www.gnu.org/licenses/>. 
 #
-# quark/crypto.nim: 
-## This module provides password hashing functions, and most importantly, the `KDF` object that is used when processing passwords for users.
-## 
-## This module also previously provided functions for fetching cryptographically-secure random data such as string, chars and ints but that job has been outsourced to [rng](https://github.com/penguinite/rng.git) in the main Pothole codebase.
+# db/crypto.nim: 
+## This module provides password hashing functions, and most importantly,
+## the `KDF` object that is used when processing passwords for users.
 ## 
 ## To use KDF and the password hashing functions, you simply use the `hash()` function.
 ## If a user requires a specific algorithm then you can provide it in the `algo` parameter
@@ -31,8 +30,8 @@ runnableExamples:
   # This is the default algorithm since May 22 2024.
   let hash1 =  hash(password, salt, PBKDF_HMAC_SHA512)
 
-# From Quark
-import quark/shared
+# From Pothole
+import ../shared
 
 # From the standard library
 import  std/base64

@@ -1,5 +1,5 @@
 # Copyright © Leo Gavilieau 2022-2023 <xmoo@privacyrequired.com>
-# Copyright © penguinite 2024 <penguinite@tuta.io>
+# Copyright © penguinite 2024-2025 <penguinite@tuta.io>
 #
 # This file is part of Pothole.
 # 
@@ -15,13 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Pothole. If not, see <https://www.gnu.org/licenses/>. 
 #
-# quark/private/database.nim:
-## This module contains all the common procedures used across the entire database.
-# From Quark
-# From somewhere in the standard library
-# From somewhere else (nimble etc.)
-import db_connector/db_postgres
-export db_postgres
+# db/private/utils.nim:
+## This module contains common procedures & macros used by the database layer
+## in Pothole.
+import std/macros, db_connector/db_postgres
 
 proc update*(db: DbConn, table, condition, column, value: string): bool =
   ## A procedure to update any value, in any column in any table.
@@ -37,3 +34,64 @@ proc update*(db: DbConn, table, condition, column, value: string): bool =
 proc has*(row: Row): bool =
   ## A quick helper function to check if a Row is valid.
   return len(row) != 0 and row[0] != ""
+
+macro get*(obj: object, fld: string): untyped =
+  ## A procedure to get a field of an object using a string.
+  ## Like so: user.get("local") == user.local
+  newDotExpr(obj, newIdentNode(fld.strVal))
+
+macro autoStmt*(db: DbConn, x: typed, table: static[string], o: object): untyped =
+  ## A procedure to magically call db.exec with only a object.
+  ## And to have every field escaped by the database layer itself
+  ## 
+  ## Use it like so:  DATABASE_CONNECTION.autoStmt(OBJECT_TYPE, TABLE_NAME, OBJECT)
+  ## So, to insert a user: db.autoStmt(User, "users", user)
+  let impl = getImpl(x)[2][2]
+
+  # First, get all the fields of the object definition
+  var fields: seq[string] = @[]
+  for x in impl:
+    fields.add(x[0][1].strVal)
+  
+  # Then, create the sql statement
+  var a = "INSERT INTO " & table & "("
+  for i in fields:
+    a.add(i)
+    a.add ", "
+  a = a[0..^3]
+  a.add ") VALUES ("
+  for i in fields:
+    a.add("?, ")
+  a = a[0..^3]
+  a.add ");"
+
+  result = newNimNode(nnkCommand)
+
+  # Oh right, db.exec needs a SqlQuery object...
+  # Alright, make a NimNode that acts like sql(a)
+  var j = newNimNode(nnkPrefix)
+  j.add ident("sql")
+  j.add newStrLitNode(a)
+
+  result.add(
+    newDotExpr(
+      ident(db.strVal),
+      bindSym("exec")
+    ),
+    j # Here we add the generated statement
+  )
+
+  # So, I am not sure if this is neccesary.
+  # But I would like to add the string conversion myself just in case
+  var n = newNimNode(nnkAccQuoted)
+  n.add ident("$")
+
+  # Btw, this was the hardest part to figure out...
+  # yeah... I am so thankful for the random forum post that hinted at putting this section here.
+  for i in fields:
+    result.add newCall(
+    n,
+    newDotExpr(
+      ident(o.strVal),
+      ident(i)
+    ))

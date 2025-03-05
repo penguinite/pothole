@@ -25,22 +25,21 @@
 ## This also imports and exports std/strutils
 
 # From Pothole
-import pothole/shared
+import pothole/lib
 
 # From the standard library
 import std/[times, strutils]
 export strutils
 
-func parseBool*(str: string): bool = 
-  ## I'll have to add this because strutils.parseBool() does not support "t" and "f"
-  ## And I think the reason for this inclusion was that db_postgres or something db-related was returning "t" and "f" for booleans.
-  ## And since parseBool() did not support this, it was messing up the entire database logic of pothole.
-  ## TODO: Submit a PR to nim upstream to add "t" and "f" in parseBool()
+template rowParseBool*(str: string) = return str == "t"
+
+func parseBool*(str: string): bool
+  {.deprecated: "Use pothole/strextra.rowParseBool for db-related logic, std/strutils.parseBool() for everything else".} =
   case str.toLowerAscii():
   of "y", "yes", "true", "1", "on", "t": return true
   of "n", "no", "false", "0", "off", "f", "": return false
 
-proc smartSplit*(s: string, specialChar: char = '&'): seq[string] =
+func smartSplit*(s: string, specialChar: char = '&'): seq[string] =
   ## A split function that is both aware of quotes and backslashes.
   ## Aware, as in, it won't split if it sees the specialCharacter surrounded by quotes, or backslashed.
   ## 
@@ -96,7 +95,7 @@ proc smartSplit*(s: string, specialChar: char = '&'): seq[string] =
   # Finally, the good part, return result.
   return result
 
-proc escapeCommas*(str: string): string = 
+func escapeCommas*(str: string): string = 
   ## A proc that escapes away commas only.
   ## Use toString, toSeq or whatever else you need.
   ## This is a bit low-level
@@ -108,7 +107,7 @@ proc escapeCommas*(str: string): string =
     else: result.add(ch)
   return result
 
-proc htmlEscape*(pre_s: string): string =
+func htmlEscape*(pre_s: string): string =
   ## Very basic HTML escaping function.
   var s = pre_s
   if s.startsWith("javascript:"):
@@ -133,11 +132,7 @@ proc htmlEscape*(pre_s: string): string =
 ## The only reason they weren't higher up is because I think they're
 ## boring and repetitive for the most part.
 
-proc toDbString*(pt: PostContentType): string =
-  ## Converts a post content type into a database-compatible string
-  return $(pt)
-
-proc toDbString*(sequence: seq[string]): string =
+func toDbString*(sequence: seq[string]): string =
   ## Converts a string sequence into a database-compatible string
   for item in sequence:
     result.add(escapeCommas(item) & ",")
@@ -145,86 +140,62 @@ proc toDbString*(sequence: seq[string]): string =
     result = result[0..^2]
   return result
 
-proc toDbString*(pl: PostPrivacyLevel): string =
+func toDbString*(pl: PostPrivacyLevel): string =
   ## Converts a post privacy level into a database-compatible string
-  case pl:
-  of Public: return "0"
-  of Unlisted: return "1"
-  of FollowersOnly: return "2"
-  of Private: return "3"
-  of Limited: return "4"
+  result = case pl:
+    of Public: "0"
+    of Unlisted: "1"
+    of FollowersOnly: "2"
+    of Private: "3"
+    of Limited: "4"
 
-proc toDbString*(date: DateTime): string = 
+func toDbString*(date: DateTime): string = 
   ## Converts a date into a database-compatible string
-  try:
-    return format(date, "yyyy-MM-dd HH:mm:ss")
-  except:
-    return now().format("yyyy-MM-dd HH:mm:ss")
+  return format(date, "yyyy-MM-dd HH:mm:ss")
 
 proc toDateFromDb*(row: string): DateTime =
   ## Creates a date out of a database row
-  try:
-    return parse(row, "yyyy-MM-dd HH:mm:ss", utc())
-  except:
-    return now()
+  return parse(row, "yyyy-MM-dd HH:mm:ss", utc())
 
-proc toPrivacyLevelFromDb*(row: string): PostPrivacyLevel =
+func toPrivacyLevelFromDb*(row: string): PostPrivacyLevel =
   ## Creats a post privacy level object out of a database row
-  case row:
-  of "0": return Public
-  of "1": return Unlisted
-  of "2": return FollowersOnly
-  of "3": return Private
-  of "4": return Limited
-  else:
-    return Public
+  result = case row:
+    of "0": Public
+    of "1": Unlisted
+    of "2": FollowersOnly
+    of "3": Private
+    of "4": Limited
+    else: raise newException(CatchableError, "toPrivacyLevelFromDb: Unknown privacy-level \"" & row & "\"")
 
-proc toSeqFromDb*(row: string): seq[string] =
-  ## Creates a sequence containing strings from a database row
-  result = split(row, ",")
-
-  # the split() proc sometimes creates items in the sequence
-  # even when there isn't. So this bit of code manually
-  # clears the list if two specific conditions are met.
-  if len(result) == 1 and result[0] == "":
-    result = @[]
-
-proc toContentTypeFromDb*(row: string): PostContentType =
+func toContentTypeFromDb*(row: string): PostContentType =
   ## A procedure to convert a string (fetched from the Db)
   ## to a PostContentType
-  case row:
-  of "0": return Text
-  of "1": return Poll
-  of "2": return Media
-  of "4": return Tag
+  result = case row:
+    of "0": Text
+    of "1": Poll
+    of "2": Media
+    of "4": Tag
+    else: raise newException(CatchableError, "toContentTypeFromDb: Unknown content-type \"" & row & "\"")
   
-proc toKdfFromDb*(num: string): KDF =
+func toKdfFromDb*(num: string): KDF =
   ## Converts a string to a KDF object.
   ## You can use this instead of IntToKDF for when you are dealing with database rows.
   ## (Which, in db_postgres, consist of seq[string])
-  case num:
-  of "1": return PBKDF_HMAC_SHA512
+  result = PBKDF_HMAC_SHA512
 
-proc toDbString*(kdf: KDF): string = 
-  ## Converts a KDF object into a string.
-  ## You could use to save nanoseconds when dealing with database logic.
-  ## Honestly though, it might be too much. Even for me.
-  return $(kdf)
-
-proc toHumanString*(kdf: KDF): string =
+func toHumanString*(kdf: KDF): string =
   ## Converts a KDF into a human-readable string.
-  case kdf:
-  of PBKDF_HMAC_SHA512: return "PBKDF_HMAC_SHA512 (210000 iterations, 32 outlength)"
+  result = "PBKDF_HMAC_SHA512 (210000 iterations, 32 outlength)"
 
 func toUserType*(s: string): UserType =
   ## Converts a plain string into a UserType
-  case s:
-  of "Person": return Person
-  of "Application": return Application
-  of "Organization": return Organization
-  of "Group": return Group
-  of "Service": return Service
-  else: return Person
+  result = case s:
+    of "Person": Person
+    of "Application": Application
+    of "Organization": Organization
+    of "Group": Group
+    of "Service": Service
+    else: Person
 
 func toString*(t: UserType): string =
   result = case t:
@@ -233,14 +204,3 @@ func toString*(t: UserType): string =
     of Organization: "Organization"
     of Group: "Group"
     of Service: "Service"
-
-func `$`*(t: UserType): string = return toString(t)
-
-proc safeHtml*(s: string): string =
-  ## Converts any greater-than and less-than signs to a sanitized HTML equivalent
-  for ch in s:
-    case ch:
-    of '<': result.add("&lt;")
-    of '>': result.add("&gt;")
-    else: result.add ch
-  return result
