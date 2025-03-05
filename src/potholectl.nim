@@ -20,7 +20,7 @@
 ## It can be used to create new users, delete posts, add new MRF policies, setup database containers and more!
 ## Generally, this command aims to be a Pothole instance administrator's best friend.
 # From Pothole & Quark:
-import quark/[db, strextra, auth_codes, sessions, oauth, apps, users, posts, shared, crypto]
+import pothole/db/[strextra, auth_codes, sessions, oauth, apps, users, posts, crypto]
 import pothole/[database, lib, conf]
 
 # Standard library

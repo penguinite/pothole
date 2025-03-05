@@ -20,10 +20,7 @@
 ## deleting them, modifying them or retrieving them.
 ## Apps are a fundamental part of the Mastodon API and they need support
 ## at the database level.
-
-# From Quark
-import quark/private/database
-import quark/[strextra]
+import private/utils, ../strextra
 
 # From somewhere in the standard library
 import std/[strutils, times]

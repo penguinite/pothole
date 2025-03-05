@@ -15,7 +15,8 @@
 # along with Pothole. If not, see <https://www.gnu.org/licenses/>. 
 # api/instance.nim:
 ## This module contains all the code for the API entities.
-
+## This is a *gigantic* module compared to everything else.
+## And it needs refactoring pretty badly.
 
 # From somewhere in Quark
 import quark/[users, posts, fields, follows, reactions, boosts, bookmarks, strextra, tag]

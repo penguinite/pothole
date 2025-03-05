@@ -14,16 +14,11 @@
 # 
 # You should have received a copy of the GNU Affero General Public License
 # along with Pothole. If not, see <https://www.gnu.org/licenses/>. 
-
-# From somewhere in Quark
-import quark/[db]
-
-# From somewhere in Pothole
 import pothole/[lib, conf, database, web]
 import pothole/helpers/routes
 
 # From standard library
-from std/strutils import join
+import std/[strutils, os]
 
 # From nimble
 import mummy, mummy/routers
@@ -50,16 +45,19 @@ var port = 3500
 if config.exists("web","port"):
   port = config.getInt("web","port")
 
-if not hasDbHost(config):
+# Provide useful hints on when default values are used...
+# Erroring out if a password for the database does not exist.
+
+if not (config.exists("db","host") or existsEnv("POTHOLE_DBHOST")):
   log "Couldn't retrieve database host. Using \"127.0.0.1:5432\" as default"
 
-if not hasDbName(config):
+if not (config.exists("db","name") or existsEnv("POTHOLE_DBNAME")):
   log "Couldn't retrieve database name. Using \"pothole\" as default"
 
-if not hasDbUser(config):
+if not (config.exists("db","user") or existsEnv("POTHOLE_DBUSER")):
   log "Couldn't retrieve database user login. Using \"pothole\" as default"
   
-if not hasDbPass(config):
+if not (config.exists("db","password") or existsEnv("POTHOLE_DBPASS")):
   log "Couldn't find database user password from the config file or environment, did you configure pothole correctly?"
   error "Database user password couldn't be found."
 

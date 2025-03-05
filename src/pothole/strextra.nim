@@ -15,83 +15,30 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Pothole. If not, see <https://www.gnu.org/licenses/>. 
 #
-# quark/strextra.nim:
+# strextra.nim:
 ## This module provides complementary string handling functions,
 ## such as functions for converting various datatypes to and from
 ## strings (for, say, database-compatability) or it might provide
 ## some new functionality not in std/strutils but too useless by itself
 ## to justify a new module.
 ## 
-## Also, it has some slightly faster alternatives to the proc's in std/strutils
+## This also imports and exports std/strutils
 
-# From Quark
-import quark/shared
+# From Pothole
+import pothole/shared
 
 # From the standard library
-import std/times
-from std/strutils import Whitespace, `%`, toLowerAscii, startsWith, split
-
-func isEmptyOrWhitespace*(str: string, charset: set[char] = Whitespace): bool =
-  ## A faster implementation of strutils.isEmptyOrWhitespace
-  ## This is basically the same thing.
-  for ch in str:
-    if ch notin charset:
-      return false
-  return true
-
-func isEmptyOrWhitespace*(ch: char, charset: set[char] = Whitespace): bool =
-  ## A faster implementation of strutils.isEmptyOrWhitespace
-  ## This is basically the same thing.
-  if ch notin charset:
-    return false
-  return true
+import std/[times, strutils]
+export strutils
 
 func parseBool*(str: string): bool = 
-  ## I'll have to add this because strutils.parseBool() does not have "t" and "f"
+  ## I'll have to add this because strutils.parseBool() does not support "t" and "f"
   ## And I think the reason for this inclusion was that db_postgres or something db-related was returning "t" and "f" for booleans.
   ## And since parseBool() did not support this, it was messing up the entire database logic of pothole.
   ## TODO: Submit a PR to nim upstream to add "t" and "f" in parseBool()
   case str.toLowerAscii():
   of "y", "yes", "true", "1", "on", "t": return true
   of "n", "no", "false", "0", "off", "f", "": return false
-
-func cleanString*(str: string, charset: set[char] = Whitespace): string =
-  ## A procedure to clean a string of whitespace characters.
-  var startnum = 0;
-  var endnum = len(str) - 1;
-
-  if len(str) < 1:
-    return "" # Return nothing, since there is nothing to clean anyway
-
-  while str[startnum] in charset:
-    if startnum == high(str): return ""
-    inc(startnum)
-
-  while endnum >= 0 and str[endnum] in charset:
-    if endnum == high(str): return ""
-    dec(endnum)
-
-  return str[startnum .. endnum]
-
-func cleanLeading*(str: string, charset: set[char] = Whitespace): string =
-  ## A procedure to clean the beginning of a string.
-  var startnum = 0;
-
-  while str[startnum] in charset:
-    if startnum == high(str): return ""
-    inc(startnum)
-
-  return str[startnum .. len(str) - 1]
-
-func cleanTrailing*(str: string, charset: set[char] = Whitespace): string =
-  ## A procedure to clean the end of a string.
-  var endnum = len(str) - 1;
-
-  while endnum >= 0 and str[endnum] in charset:
-    if endnum == high(str): return ""
-    dec(endnum)
-
-  return str[0 .. endnum]
 
 proc smartSplit*(s: string, specialChar: char = '&'): seq[string] =
   ## A split function that is both aware of quotes and backslashes.

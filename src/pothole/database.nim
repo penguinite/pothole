@@ -1,3 +1,4 @@
+# Copyright © penguinite 2024-2025 <penguinite@tuta.io>
 # Copyright © Leo Gavilieau 2022-2023 <xmoo@privacyrequired.com>
 #
 # This file is part of Pothole.
@@ -15,71 +16,66 @@
 # along with Pothole. If not, see <https://www.gnu.org/licenses/>. 
 #
 # database.nim:
-## Some small functions for working with the database. (Fetch env vars, or data from the config in one go.)
+## Some small functions for working with the database. (Open connections, fetch env info and so on.)
 ## 
-## Keep in mind, you will still need to import quark/[WHATEVER FEATURES YOU WANT HERE]
+## Keep in mind, you will still need to import the actual database logic from the db/ folder
 
 # From somewhere in Pothole
-import conf
+import pothole/conf
 
 # From somewhere in the standard library
-import std/os
+import std/[os, strutils]
 
-import waterpark/postgres
-export postgres
+# Third party libraries
+import waterpark/postgres, db_connector/db_postgres
 
-proc hasDbHost*(config: ConfigTable): bool =
-  if config.exists("db","host") or existsEnv("PHDB_HOST"):
-    return true
-  return false
+## In the past, we used an archaic and sorta messed up system for making
+## the tables, these have been replaced with a plain old SQL script that gets read
+## at compile-time.
+##
+## Unlike Pleroma, Pothole's config is entirely stored in the config file.
+## There is no way to configure Pothole from the database alone.
+## So we do not need a tool to generate SQL for a specific instance.
+## 
+## Although, to make setup easier, we could make an autoconfig tool
+## that does everything we want, and we would just need the user to
+## pipe the sql file to the postgres user.
 
-proc getDbHost*(config: ConfigTable): string =
-  ## This procedure returns a string containing the name of the database we want to use.
-  ## It has a default value of "127.0.0.1:5432" but overrides it based on the config or environment variables (In that order)
-  result = config.getStringOrDefault("db","host","127.0.0.1:5432")
-  if existsEnv("PHDB_HOST"):
-    result = getEnv("PHDB_HOST")
+template executeFile(db: DbConn, sqlData: string): untyped =
+  # TODO: So, I get an error when executing multi-line statements and I don't know why.
+  # What I decided to do was put every single SQL query/instruction all on their own separate lines.
+  # and then make a sort-of mini-parser.
+  # 
+  # The upside is that this works! The downside is that it makes modifying and reading the setup SQL *EXTREMELY* difficult.
+  # So y'know, figure out a way to do multi-line statements or we will all go insane.
+  var i = 0
+  for line in sqlData.splitLines:
+    inc i
+    if line.startsWith("--") or line.isEmptyOrWhitespace():
+      continue # If this is a comment, or if its mostly empty then skip.
 
-  return result
+    # Otherwise, execute the line as SQL code.
+    try:
+      db.exec(sql(line))
+    except CatchableError as err:
+      raise newException(DbError, "Line " & $i & " in setup.sql; Couldn't run the init script: " & err.msg)
 
-proc hasDbName*(config: ConfigTable): bool =
-  if config.exists("db","name") or existsEnv("PHDB_NAME"):
-    return true
-  return false
-
-proc getDbName*(config: ConfigTable): string =
-  ## This procedure returns a string containing the name of the database we want to use.
-  ## It has a default value of "pothole" but overrides it based on the config or environment variables (In that order)
-  result = config.getStringOrDefault("db","name","pothole")
-  if existsEnv("PHDB_NAME"):
-    result = getEnv("PHDB_NAME")
+proc setup*(name, user, host, password: string,schemaCheck: bool = true): DbConn =
+  ## setup() is called whenever you want to initialize a database schema.
+  ## It does not merely launch a database connection, it also makes sure that every table needed is there.
   
+  if host.startsWith("__eat_flaming_death"):
+    # The host "__eat_flaming_death" is used in some documentation examples
+    # and so its important for us to add a special case just for it.
+    # TODO: Figure out what documentation is using this workaround, and patch it.
+    return
+
+  result = open(host, user, password, name)
+  result.executeFile(staticRead("assets/setup.sql"))
   return result
 
-proc hasDbUser*(config: ConfigTable): bool =
-  if config.exists("db","user") or existsEnv("PHDB_USER"):
-    return true
-  return false
-
-proc getDbUser*(config: ConfigTable): string =
-  ## This procedure returns a string containing the name of the database we want to use.
-  ## It has a default value of "pothole" but overrides it based on the config or environment variables (In that order)
-  result = config.getStringOrDefault("db","user","pothole")
-  if existsEnv("PHDB_USER"):
-    result = getEnv("PHDB_USER")
-  
-  return result
-
-proc hasDbPass*(config: ConfigTable): bool =
-  if config.exists("db","password") or existsEnv("PHDB_PASS"):
-    return true
-  return false
-
-proc getDbPass*(config: ConfigTable): string =
-  ## This procedure returns a string containing the name of the database we want to use.
-  ## It has no default value but overrides it based on the config or environment variables (In that order)
+proc purge*(db: DbConn) =
+  ## Purges all of the data, tables and whatnot from the database.
   ## 
-  result = config.getStringOrDefault("db","password","")
-  if existsEnv("PHDB_PASS"):
-    result = getEnv("PHDB_PASS")
-  return result
+  ## Obviously a destructive procedure, don't run carelessly...
+  db.executeFile(staticRead("assets/purge.sql"))
