@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Pothole. If not, see <https://www.gnu.org/licenses/>. 
 #
-# src/pothole/lib.nim:
+# lib.nim:
 ## This module contains procedures, templates, constants and other data
 ## to be shared across Pothole, or that is used many times across many places.
 ## 

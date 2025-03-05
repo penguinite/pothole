@@ -1,5 +1,5 @@
 # Copyright © Leo Gavilieau 2023 <xmoo@privacyrequired.com>
-# Copyright © penguinite 2024 <penguinite@tuta.io>
+# Copyright © penguinite 2024-2025 <penguinite@tuta.io>
 #
 # This file is part of Pothole.
 # 
@@ -16,12 +16,8 @@
 # along with Pothole. If not, see <https://www.gnu.org/licenses/>. 
 #
 # debug.nim:
-## Common procedures for debugging. This is only useful for creating
-## fake users and fake posts (for testing)
-import std/[tables, os]
-import quark/[users, posts]
-from db_connector/db_postgres import DbConn, open
-{.define: iniplusCheckmaps.}
+## Procedures used in the test-suite (includes fake data)
+import db/[users, posts], shared
 import rng, iniplus
 
 const userData* = @[
@@ -107,16 +103,6 @@ const fakeStatuses* = @[
   "I'm my own worst enemy but the enemy of my enemy is my friend so I'm also my own best friend it's just basic math"
 ]
 
-const reactions* = @[
-  # Some sample reactions.
-  "happy","sad","angry","disgusted","favorite"
-]
-
-const boosts* = @[
-  # Some sample boost levels.
-  "all","followers","local","private"
-]
-
 proc genFakePosts*(): seq[Post] =
   ## Creates a couple of fake posts.
   for txt in fakeStatuses:
@@ -126,29 +112,6 @@ proc genFakePosts*(): seq[Post] =
         content = @[text(txt)]
       )
     )
-  return result
-
-proc genRandomHandles*(): seq[string] =
-  ## Generates a couple of random handles (not users)
-  ## Used in genFakeReactions() and genFakeBoosts()
-  for i in 0..rand(high(userData)):
-    result.add(sample(userData)[0])
-  return result
-
-proc genFakeReactions*(): Table[string, seq[string]] =
-  ## Creates a couple of fake reactions.
-  for i in 0..rand(25):
-    let reaction = sample(reactions)
-    if not result.hasKey(reaction):
-      result[reaction] = genRandomHandles()
-  return result
-
-proc genFakeBoosts*(): Table[string, seq[string]] = 
-  ## Generates a couple of fake boosts
-  for i in 0..rand(25):
-    let boost = sample(boosts)
-    if not result.hasKey(boost):
-      result[boost] = genRandomHandles()
   return result
 
 proc genFakeUsers*(): seq[User] =
@@ -162,31 +125,3 @@ proc genFakeUsers*(): seq[User] =
     user.password = "DISABLED_FOREVER"
     result.add(user)
   return result
-
-proc connectToDb*(): DbConn =
-  ## Uses default values to connect to a database, suitable for tests.
-  proc getFromEnvOrDefault(env, default: string): string =
-    if existsEnv(env):
-      return getEnv(env)
-    return default
-
-  return open(
-    getFromEnvOrDefault("PHDB_HOST","127.0.0.1:5432"),
-    getFromEnvOrDefault("PHB_USER", "pothole"),
-    getFromEnvOrDefault("PHDB_PASS", "SOMETHING_SECRET"),
-    getFromEnvOrDefault("PHDB_NAME", "pothole")
-  )
-
-proc testGuard*(section, name: string) =
-  ## This is a poor guard against testament running tests multiple times.
-  const fn = ".testGuardTmpDELETEME"
-
-  var cnf: ConfigTable
-  if fileExists(fn):
-    cnf = parseString(readFile(fn))
-  
-  if cnf.exists(section, name):
-    quit(0)
-  else:
-    cnf.setKey(section, name, newCValue(true))
-    writeFile(fn, toString(cnf))

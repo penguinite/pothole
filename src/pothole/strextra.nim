@@ -25,7 +25,7 @@
 ## This also imports and exports std/strutils
 
 # From Pothole
-import pothole/lib
+import pothole/shared
 
 # From the standard library
 import std/[times, strutils]

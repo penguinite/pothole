@@ -15,29 +15,16 @@
 # along with Pothole. If not, see <https://www.gnu.org/licenses/>. 
 #
 # conf.nim:
-## This module wraps configuration file parsers, it also has some essential functions
-## Such as getConfigFilename()
-## Currently, this module serves as a wrapper over the iniplus config parser.
-
-# From standard library
-import std/[os]
-
-# From elsewhere
-import iniplus
-export iniplus
+## This module stores the ConfigPool object (which is used heavily in the API layer)
+## and it also stores some procedures related to configuration.
+import std/os, iniplus
 
 proc getConfigFilename*(): string =
-  ## Returns the filename for the 
+  ## Returns the filename for the pothole config
   result = "pothole.conf"
   if existsEnv("POTHOLE_CONFIG"):
     result = getEnv("POTHOLE_CONFIG")
   return result
-
-proc getEnvOrDefault*(env: string, default: string): string =
-  {.deprecated: "Deprecated to reduce Pothole's API, do not use.".}
-  if not existsEnv(env):
-    return default
-  return getEnv(env)
 
 ## This is a config file pool.
 ## Mummy is a multi-threaded database server, and so using global variables is a bad idea.

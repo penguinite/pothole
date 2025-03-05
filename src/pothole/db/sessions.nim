@@ -1,4 +1,4 @@
-# Copyright © penguinite 2024 <penguinite@tuta.io>
+# Copyright © penguinite 2024-2025 <penguinite@tuta.io>
 #
 # This file is part of Pothole. Specifically, the Quark repository.
 # 
@@ -14,17 +14,20 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Pothole. If not, see <https://www.gnu.org/licenses/>. 
 #
-# quark/db/sessions.nim:
+# db/sessions.nim:
 ## This module contains all database logic for handling user sessions.
 ## Such as verifying them, creating them and also deleting them
 ## if the user demands it or if they have gone out-of-date.
-
+import private/utils,
 import quark/[users, strextra]
 import quark/private/database
 import rng
 
 # From somewhere in the standard library
 import std/[times]
+
+# From third-party libraries
+import rng, db_connector/db_postgres
 
 proc updateTimestampForSession*(db: DbConn, id: string) = 
   if not has(db.getRow(sql"SELECT id FROM sessions WHERE id = ?;", id)):

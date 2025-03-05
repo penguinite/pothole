@@ -15,26 +15,8 @@
 # along with Pothole. If not, see <https://www.gnu.org/licenses/>. 
 #
 # assets.nim:
-## This module basically acts as the assets store and it contains a quick templating library
-## When compilling, we expect all of the built-in assets to be stored in the assets/ folder.
-## On startup, we will load all of these and do some special operation to some modules.
-## (Ie. index.html, the pothole main webpage, will need to be compiled with the built-in quick template library.)
-import std/os, pothole/[conf]
-import std/strutils except isEmptyOrWhitespace, parseBool
-
-proc initUploads*(config: ConfigTable): string =
-  ## Initializes the upload folder by checking if the user has already defined where it should be
-  ## and creating the folder if it doesn't exist.
-  result = config.getStringOrDefault("folders", "uploads", "uploads/")
-  
-  if not result.endsWith("/"):
-    result.add("/")
-
-  if not dirExists(result):
-    createDir(result)
-
-  return result
-
+## This module basically acts as the assets store
+import std/tables
 proc getAsset*(fn: string): string =
   # Get static asset
   const table = {

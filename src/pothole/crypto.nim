@@ -31,7 +31,7 @@ runnableExamples:
   let hash1 =  hash(password, salt, PBKDF_HMAC_SHA512)
 
 # From Pothole
-import ../shared
+import shared
 
 # From the standard library
 import  std/base64
@@ -39,18 +39,15 @@ import  std/base64
 # From elsewhere
 import nimcrypto, nimcrypto/pbkdf2
 
-const latestKdf* = PBKDF_HMAC_SHA512 ## The latest Key Derivation Function supported by this build of pothole, check out the KDF section in the DESIGN.md document for more information.
+# The latest Key Derivation Function supported by this build of pothole,
+# check out the KDF section in the DESIGN.md document for more information.
+const latestKdf* = PBKDF_HMAC_SHA512 
 
 proc pbkdf2_hmac_sha512_hash*(password, salt:string, iter: int = 210000): string =
   ## We use PBKDF2-HMAC-SHA512 by default with 210000 iterations unless specified.
   ## This procedure is a wrapper over nimcrypto's PBKDF2 implementation
   ## This procedure returns a base64-encoded string.
   ## kdf ID: 1
-  runnableExamples:
-    var password = "cannabis abyss"
-    var salt = "__eat_flaming_death"
-    # Hash the user's password
-    var hashed_password = pbkdf2_hmac_sha512_hash(password, salt)
   for x in pbkdf2(
       sha512,
       toOpenArray(password,0,len(password) - 1),

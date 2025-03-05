@@ -14,18 +14,17 @@
 # 
 # You should have received a copy of the GNU Affero General Public License
 # along with Pothole. If not, see <https://www.gnu.org/licenses/>. 
-import pothole/[lib, conf, database, web]
-import pothole/helpers/routes
+import pothole/[shared, conf, routes, database, web]
 
 # From standard library
 import std/[strutils, os]
 
-# From nimble
-import mummy, mummy/routers
+# From third-parties
+import mummy, mummy/routers, iniplus
 
-echo "Pothole version ", lib.phVersion
-log "Copyright © penguinite <penguinite@tuta.io> 2024-2025"
+log "Pothole version ", phVersion
 log "Copyright © Leo Gavilieau <xmoo@privacyrequired.com> 2022-2023"
+log "Copyright © penguinite <penguinite@tuta.io> 2024-2025"
 log "Licensed under the GNU Affero General Public License version 3 or later"
 
 when not defined(useMalloc):
@@ -40,7 +39,8 @@ setControlCHook(exit)
 
 log "Using ", getConfigFilename(), " as config file"
 
-let config = setup(getConfigFilename())
+let config = parseFile(getConfigFilename())
+
 var port = 3500
 if config.exists("web","port"):
   port = config.getInt("web","port")

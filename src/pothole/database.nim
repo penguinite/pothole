@@ -20,14 +20,11 @@
 ## 
 ## Keep in mind, you will still need to import the actual database logic from the db/ folder
 
-# From somewhere in Pothole
-import pothole/conf
-
 # From somewhere in the standard library
 import std/[os, strutils]
 
 # Third party libraries
-import waterpark/postgres, db_connector/db_postgres
+import waterpark/postgres, db_connector/db_postgres, iniplus
 
 ## In the past, we used an archaic and sorta messed up system for making
 ## the tables, these have been replaced with a plain old SQL script that gets read
@@ -79,3 +76,23 @@ proc purge*(db: DbConn) =
   ## 
   ## Obviously a destructive procedure, don't run carelessly...
   db.executeFile(staticRead("assets/purge.sql"))
+
+proc getDbHost*(config: ConfigTable): string =
+  if existsEnv("POTHOLE_DBHOST"):
+    return getEnv("POTHOLE_DBHOST")
+  return config.getStringOrDefault("db", "host", "127.0.0.1:5432")
+
+proc getDbName*(config: ConfigTable): string =
+  if existsEnv("POTHOLE_DBNAME"):
+    return getEnv("POTHOLE_DBNAME")
+  return config.getStringOrDefault("db", "name", "pothole")
+
+proc getDbUser*(config: ConfigTable): string =
+  if existsEnv("POTHOLE_DBUSER"):
+    return getEnv("POTHOLE_DBUSER")
+  return config.getStringOrDefault("db", "user", "pothole")
+
+proc getDbPass*(config: ConfigTable): string =
+  if existsEnv("POTHOLE_DBPASS"):
+    return getEnv("POTHOLE_DBPASS")
+  return config.getString("db", "pass")

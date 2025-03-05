@@ -19,8 +19,8 @@
 
 {.define: ssl.}
 import std/strutils
-import pothole/[conf, lib]
-import smtp
+import pothole/shared
+import smtp, iniplus
 
 
 proc sendEmail(config: ConfigTable, address: string, message: Message) =
@@ -32,25 +32,32 @@ proc sendEmail(config: ConfigTable, address: string, message: Message) =
     log "Either you forgot to disable an option ([web] require_verification) or you forgot to enable another one ([email] enabled)"
     return # Return as there is nothing to do.
 
-  let ssl = config.getStringOrDefault("email", "ssl", "true").toLower()
+  let
+    ssl = config.getStringOrDefault("email", "ssl", "true").toLower()
+    host = config.getString("email","host")
+    port = Port(config.getInt("email","port"))
+    user = config.getStringOrDefault("email", "user", "")
+    pass = config.getStringOrDefault("email", "pass", "")
+    fromAddr = config.getString("email", "from")
+
   var smtp: Smtp
   if ssl == "true":
     smtp = newSmtp(useSsl = true)
   else:
     smtp = newSmtp()
   
-  smtp.connect(config.getString("email","host"), Port(config.getInt("email","port")))
+  smtp.connect(host, port)
   if ssl == "starttls":
     smtp.startTls()
   
-  if config.exists("email", "user") and config.exists("email", "pass"):
+  if user != "" and pass != "":
     smtp.auth(
-      config.getString("email", "user"),
-      config.getString("email", "pass")
+      user,
+      pass
     )
 
   smtp.sendMail(
-    config.getString("email", "from"),
+    fromAddr,
     @[address], $(message)
   )
 

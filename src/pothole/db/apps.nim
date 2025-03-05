@@ -47,7 +47,7 @@ proc purgeOldApps*(db: DbConn) =
     if row[0] == "0": # Skip "null" app.
       continue
 
-    if now().utc - toDateFromDb(row[1]) == initDuration(weeks = 1):
+    if now().utc - parse(row[1], "yyyy-MM-dd HH:mm:ss", utc()) == initDuration(weeks = 1):
       db.exec(sql"""
 DELETE FROM apps WHERE id = ?;
 DELETE FROM auth_codes WHERE cid = ?;
@@ -70,7 +70,7 @@ proc createClient*(db: DbConn, name: string, link: string = "", scopes: seq[stri
   while db.getRow(sql"SELECT 0 FROM apps WHERE secret = ?;", secret)[0] != "":
     secret = randstr()
 
-  db.exec(sql"INSERT INTO apps VALUES (?,?,?,?,?,?,?);", result, secret, scopes, redirect_uri, name, link, utc(now()).toDbString())
+  db.exec(sql"INSERT INTO apps VALUES (?,?,?,?,?,?,?);", result, secret, toDbString(scopes), redirect_uri, name, link, utc(now()).toDbString())
 
 proc getClientLink*(db: DbConn, id: string): string = 
   db.getRow(sql"SELECT link FROM apps WHERE id = ?;", id)[0]

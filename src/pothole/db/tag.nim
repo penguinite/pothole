@@ -1,4 +1,4 @@
-# Copyright © penguinite 2024 <penguinite@tuta.io>
+# Copyright © penguinite 2024-2025 <penguinite@tuta.io>
 #
 # This file is part of Pothole.
 # 
@@ -14,11 +14,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Pothole. If not, see <https://www.gnu.org/licenses/>. 
 #
-# quark/db/tag.nim:
+# db/tag.nim:
 ## This module contains all database logic for handling hashtags!
 ## Including creation, retrieval, checking, updating and deletion
-import quark/private/database, quark/shared, std/times
-export shared, times
+import private/utils, ../shared, std/times, db_connector/db_postgres
 
 proc tagExists*(db: DbConn, tag: string): bool =
   return has(db.getRow(sql"SELECT trendable FROM tag WHERE name = ?;", tag))
