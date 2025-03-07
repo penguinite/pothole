@@ -1,4 +1,4 @@
-# Copyright © penguinite 2024 <penguinite@tuta.io>
+# Copyright © penguinite 2024-2025 <penguinite@tuta.io>
 #
 # This file is part of Pothole.
 # 
@@ -14,70 +14,60 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Pothole. If not, see <https://www.gnu.org/licenses/>. 
 #
-# quark/db/follows.nim:
+# db/follows.nim:
 ## This module contains all database logic for handling followers, following and so on.
-
-import quark/private/database
-import quark/[users, tag, strextra]
-import std/sequtils
+import users, tag, ../[strextra, shared], std/[sequtils, times], db_connector/db_postgres
 
 proc getFollowersQuick*(db: DbConn, user: string): seq[string] =
   ## Returns a set of handles that follow a specific user
   for row in db.getAllRows(sql"SELECT follower FROM follows WHERE following = ? AND approved = true;", user):
     result.add(db.getHandleFromId(row[0]))
-  return result
 
 proc getFollowingAsIDQuick*(db: DbConn, user: string, limit = 20): seq[string] =
   ## Returns a set of IDs that a specific user follows
   for row in db.getAllRows(sql"SELECT following FROM follows WHERE follower = ? AND approved = true LIMIT ?;", user, $limit):
     result.add(row[0])
-  return result
 
 proc getFollowingQuick*(db: DbConn, user: string, limit = 20): seq[string] =
   ## Returns a set of handles that a specific user follows
   for row in db.getAllRows(sql"SELECT following FROM follows WHERE follower = ? AND approved = true LIMIT ?;", user, $limit):
     result.add(db.getHandleFromId(row[0]))
-  return result
 
 proc getFollowers*(db: DbConn, user: string): seq[User] =
   ## Returns a set of User objects that follow a specific usr
   for row in db.getAllRows(sql"SELECT follower FROM follows WHERE following = ? AND approved = true;", user):
     result.add(db.getUserById(row[0]))
-  return result
 
 proc getFollowing*(db: DbConn, user: string): seq[User] =
   ## Returns a set of User objects that a specific user follows
   for row in db.getAllRows(sql"SELECT following FROM follows WHERE follower = ? AND approved = true;", user):
     result.add(db.getUserById(row[0]))
-  return result
 
 proc getFollowersCount*(db: DbConn, user: string): int =
   ## Returns how many people follow this user in a number
-  return len(db.getAllRows(sql"SELECT approved FROM follows WHERE following = ? AND approved = true;", user))
+  len(db.getAllRows(sql"SELECT approved FROM follows WHERE following = ? AND approved = true;", user))
 
 proc getFollowingCount*(db: DbConn, user: string): int =
   ## Returns how many people this user follows in a number
-  return len(db.getAllRows(sql"SELECT approved FROM follows WHERE follower = ? AND approved = true;", user))
+  len(db.getAllRows(sql"SELECT approved FROM follows WHERE follower = ? AND approved = true;", user))
 
 proc getFollowReqCount*(db: DbConn, user: string): int =
   ## Returns how many pending follow requests a user has.
-  return len(db.getAllRows(sql"SELECT approved FROM follows WHERE following = ? AND approved = false;", user))
-  
-type
-  FollowStatus* = enum
-    NoFollowRequest, PendingFollowRequest, AcceptedFollowRequest
+  len(db.getAllRows(sql"SELECT approved FROM follows WHERE following = ? AND approved = false;", user))
 
 proc getFollowStatus*(db: DbConn, follower, following: string): FollowStatus =
-  let row = db.getRow(sql"SELECT approved FROM follows WHERE follower = ? AND following = ?;", follower, following)
-
   # It's small details like these that break the database logic.
   # You'd expect getRow() to return booleans like this: "true" or "false"
   # But no, it does "t" or "f" which, std/strutil's parseBool() can't handle
   # Thankfully, i've been through this rigamarole before,
   # so i already knew boolean handling was garbage
-  if row == @["f"]: return PendingFollowRequest
-  if row == @["t"]: return AcceptedFollowRequest
-  return NoFollowRequest
+  result = case db.getRow(
+      sql"SELECT approved FROM follows WHERE follower = ? AND following = ?;", 
+      follower, following
+    )[0]:
+    of "t": PendingFollowRequest
+    of "f": AcceptedFollowRequest
+    else: NoFollowRequest
 
 proc followUser*(db: DbConn, follower, following: string, approved: bool = true) =
   ## Follows a user (THEY ALL MUST BE IN IDS)
@@ -96,13 +86,12 @@ proc followUser*(db: DbConn, follower, following: string, approved: bool = true)
 
 proc unfollowUser*(db: DbConn, follower, following: string) =
   ## Unfollows a user
-  if not db.userIdExists(follower) or not db.userIdExists(following):
-    return # Since users don't exist, we just leave.
-
   db.exec(
     sql"DELETE FROM follows WHERE follower = ? AND following = ?;",
     follower, following
   )
+
+# TODO: Move the following code into its own module.
 
 proc getHomeTimeline*(db: DbConn, user: string, limit: var int = 20): seq[string] =
   ## Returns a list of IDs to posts sent by users that `user` follows or in hashtags that `user` follows.

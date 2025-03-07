@@ -19,13 +19,13 @@
 ## And it needs refactoring pretty badly.
 
 # From somewhere in Pothole
-import pothole/[conf, database, shared, strextra, routes, assets], pothole/db/[users, posts, fields, follows, reactions, boosts, bookmarks, tag]
+import pothole/[conf, shared, strextra, routes, assets], pothole/db/[users, posts, fields, follows, reactions, boosts, bookmarks, tag]
 
 # From somewhere in the standard library
 import std/[json, times]
 
 # From Elsewhere (third-party libraries)
-import iniplus, db_connector/db_postgres, waterpark, waterpark/postgres
+import iniplus, db_connector/db_postgres
 
 # TODO: One easy way to improve performance would be to switch
 # to another JSON library such as treeform's jsony or disruptek's jason.
@@ -39,27 +39,23 @@ proc formatDate(date: DateTime): string =
   # Broken example format date:  2025 - 01 - 20 T 04 : 14 : 31 Z
   return date.format("YYYY-MM-dd") & "T" & date.format("hh:mm:ss") & ".000Z"
 
-proc fields*(user_id: string): JsonNode =
+proc fields*(db: DbConn, user_id: string): JsonNode =
   ## Initialize profile fields
   result = newJArray()
-  dbPool.withConnection db:
-    for key, value, verified, verified_date in db.getFields(user_id).items:
-      var jason = %* {
-        "name": key,
-        "value": value,
-      }
+  for key, value, verified, verified_date in db.getFields(user_id).items:
+    var jason = %* {
+      "name": key,
+      "value": value,
+    }
 
-      if verified:
-        jason["verified_at"] = newJString(verified_date.format("yyyy-mm-dd") & "T" & verified_date.format("hh:mm:ss"))
-      else:
-        jason["verified_at"] = newJNull()
-      result.add(jason)
+    if verified:
+      jason["verified_at"] = newJString(verified_date.format("yyyy-mm-dd") & "T" & verified_date.format("hh:mm:ss"))
+    else:
+      jason["verified_at"] = newJNull()
+    result.add(jason)
 
-proc tagHistory(tag: string): seq[JsonNode] =
+proc tagHistory(db: DbConn, tag: string): seq[JsonNode] =
   var
-    postNum, accNum: seq[int]
-
-  dbPool.withConnection db:
     accNum = db.getTagUsageUserNum(tag, days = 7)
     postNum = db.getTagUsagePostNum(tag, days = 7)
 
@@ -74,24 +70,23 @@ proc tagHistory(tag: string): seq[JsonNode] =
       }
     )
 
-proc tag*(tag: string, user = ""): JsonNode =
+proc tag*(db: DbConn, tag: string, user = ""): JsonNode =
   var
     url = ""
     following = false
 
-  dbPool.withConnection db:
-    url = db.getTagUrl(tag)
-    if user != "":
-      following = db.userFollowsTag(tag, user)
+  url = db.getTagUrl(tag)
+  if user != "":
+    following = db.userFollowsTag(tag, user)
 
   return %* {
     "name": tag,
     "url": url,
-    "history": tagHistory(tag),
+    "history": db.tagHistory(tag),
     "following": following
   }
 
-proc account*(user_id: string): JsonNode =
+proc account*(db: DbConn, config: ConfigTable, user_id: string): JsonNode =
   ## Create an account entity
   
   # If user_id is "" then just return JNull()
@@ -105,15 +100,12 @@ proc account*(user_id: string): JsonNode =
     avatar, header: string
     followers, following, totalPosts: int
 
-  dbPool.withConnection db:
-    user = db.getUserById(user_id)
-    followers = db.getFollowersCount(user_id)
-    following = db.getFollowingCount(user_id)
-    totalPosts = db.getNumPostsByUser(user_id)
-
-  configPool.withConnection config:
-    avatar = config.getAvatar(user_id)
-    header = config.getHeader(user_id)
+  user = db.getUserById(user_id)
+  followers = db.getFollowersCount(user_id)
+  following = db.getFollowingCount(user_id)
+  totalPosts = db.getNumPostsByUser(user_id)
+  avatar = config.getAvatar(user_id)
+  header = config.getHeader(user_id)
 
   return %* {
     "id": user_id,
@@ -136,19 +128,13 @@ proc account*(user_id: string): JsonNode =
     "statuses_count": totalPosts,
     "last_status_at": "", # Tell me, who the hell is using this?!? WHAT FOR?!?
     "emojis": [], # TODO: I am not sure what this is supposed to be
-    "fields": fields(user_id)
+    "fields": db.fields(user_id)
   }
 
-proc role*(user_id: string): JsonNode =
+proc role*(db: DbConn, user_id: string): JsonNode =
   ## Returns a role entity belonging to a user.
   # TODO: Implement more dynamic roles rather than just is_admin and is_moderator
-  result = newJObject()
-  var is_admin, is_mod: bool
-  dbPool.withConnection db:
-    is_admin = db.isAdmin(user_id)
-    is_mod = db.isModerator(user_id)
-
-  if is_admin:
+  if db.isAdmin(user_id):
     return %* {
       "id": "0",
       "name": "Admin",
@@ -157,7 +143,7 @@ proc role*(user_id: string): JsonNode =
       "highlighted": true
     }
     
-  if is_mod:
+  if db.isModerator(user_id):
     return %* {
       "id": "1",
       "name": "Moderator",
@@ -168,203 +154,168 @@ proc role*(user_id: string): JsonNode =
   
   
   
-proc credentialAccount*(user_id: string): JsonNode =
+proc credentialAccount*(db: DbConn, config: ConfigTable, user_id: string): JsonNode =
   ## Create a credential account
-  result = account(user_id)
+  result = db.account(config, user_id)
   
   if result.kind == JNull:
     return result
 
-  var
-    bio = ""
-    followReqCount: int
-  
-  dbPool.withConnection db:
-    bio = db.getUserBio(user_id)
-    followReqCount = db.getFollowReqCount(user_id)
-
   result["source"] = %* {
-    "note": bio,
-    "fields": fields(user_id),
+    "note": db.getUserBio(user_id),
+    "fields": db.fields(user_id),
     "privacy": "public", # TODO: Implement source[privacy] properly
     "sensitive": false, # TODO: Implement source[sensitive] properly
     "language": "en", # TODO: Implement source[language] properly
-    "follow_requests_count": followReqCount
+    "follow_requests_count": db.getFollowReqCount(user_id),
+    "role": db.role(user_id)
    }
 
-  result["role"] = role(user_id)
-
-  return result
-
-proc rules*(): JsonNode =
+proc rules*(config: ConfigTable): JsonNode =
   result = newJArray()
-  configPool.withConnection config:
-    var i = 0
-    for rule in config.getStringArrayOrDefault("instance", "rules", @[]):
-      inc i
-      result.add(
-        %* {
-          "id": $i,
-          "text": rule
-        }
-      )
-  return result
+  var i = 0
+  for rule in config.getStringArrayOrDefault("instance", "rules", @[]):
+    inc i
+    result.add(
+      %* {
+        "id": $i,
+        "text": rule
+      }
+    )
 
-proc extendedDescription*(): JsonNode =
-  configPool.withConnection config:
-    return %* {
-      "updated_at": formatDate(now().utc),
-      "content": config.getStringOrDefault(
-        "instance", "description",
-        config.getStringOrDefault(
-          "instance", "summary", ""
-        )
+proc extendedDescription*(config: ConfigTable): JsonNode =
+  return %* {
+    "updated_at": formatDate(now().utc),
+    "content": config.getStringOrDefault(
+      "instance", "description",
+      config.getStringOrDefault(
+        "instance", "summary", ""
       )
-    }
+    )
+  }
 
 proc mastoAPIVersion*(): string =
   ## Returns Pothole's version in a way that indicates Mastodon API level support.
-  return lib.phMastoCompat & " (compatible; Pothole " & lib.phVersion & ")"
+  return phMastoCompat & " (compatible; Pothole " & phVersion & ")"
 
-proc v1Instance*(): JsonNode = 
-  var
-    userCount, postCount, domainCount: int
-    admin: string
+proc v1Instance*(db: DbConn, config: ConfigTable): JsonNode = 
+  return %*
+    {
+      "uri": config.getString("instance","uri"),
+      "title": config.getString("instance","name"),
+      "short_description": config.getString("instance", "summary"),
+      "description": config.getStringOrDefault(
+        "instance", "description",
+        config.getString("instance","summary")
+      ),
+      "email": config.getStringOrDefault("instance","email",""),
+      "version": mastoAPIVersion(),
+      "urls": {
+        "streaming_api": "wss://" & config.getString("instance","uri") & config.getStringOrDefault("instance", "endpoint", "/")
+      },
+      "stats": {
+        "use_count": db.getTotalLocalUsers(),
+        "status_count": db.getNumTotalPosts(),
+        "domain_count": db.getTotalDomains()
+      },
+      "thumbnail": config.getStringOrDefault("instance", "logo", ""),
+      "languages": config.getStringArrayOrDefault("instance", "languages", @["en"]),
+      "registrations": config.getBoolOrDefault("user", "registrations_open", true),
+      "approval_required": config.getBoolOrDefault("user", "require_approval", false),
+      "configuration": {
+        "statuses": {
+          "max_characters": config.getIntOrDefault("user", "max_chars", 2000),
+          "max_media_attachments": config.getIntOrDefault("user", "max_attachments", 8),
+          "characters_reserved_per_url": 23
+        },
+        "media_attachments": {
+          "supported_mime_types":["image/jpeg","image/png","image/gif","image/webp","video/webm","video/mp4","video/quicktime","video/ogg","audio/wave","audio/wav","audio/x-wav","audio/x-pn-wave","audio/vnd.wave","audio/ogg","audio/vorbis","audio/mpeg","audio/mp3","audio/webm","audio/flac","audio/aac","audio/m4a","audio/x-m4a","audio/mp4","audio/3gpp","video/x-ms-asf"],
+          "image_size_limit": config.getIntOrDefault("storage","upload_size_limit", 10) * 1000000,
+          "image_matrix_limit": 16777216, # I copied this as-is from the documentation cause I will NOT be writing code to deal with media file width and height.
+          "video_size_limit": config.getIntOrDefault("storage","upload_size_limit", 10) * 1000000,
+          "video_frame_rate_limit": 60, # I also won't be writing code to check for video framerates
+          "video_matrix_limit": 2304000 # I copied this as-is from the documentation cause I will NOT be writing code to deal with media file width and height.
+        },
+        "polls": {
+          "max_options": config.getIntOrDefault("instance", "max_poll_options", 20),
+          "max_characters_per_option": 100,
+          "min_expiration": 300,
+          "max_expiration": 2629746
+        },
+      },
+      "contact_account": db.account(config, db.getFirstAdmin()),
+      "rules": config.rules()
+    }
 
-  dbPool.withConnection db:
-    userCount = db.getTotalLocalUsers()
-    postCount = db.getNumTotalPosts()
-    domainCount = db.getTotalDomains()
-    admin = db.getFirstAdmin()
-
-  
-  configPool.withConnection config:
-    return %*
-      {
-        "uri": config.getString("instance","uri"),
-        "title": config.getString("instance","name"),
-        "short_description": config.getString("instance", "summary"),
-        "description": config.getStringOrDefault(
-          "instance", "description",
-          config.getString("instance","summary")
-        ),
-        "email": config.getStringOrDefault("instance","email",""),
-        "version": mastoAPIVersion(),
+proc v2Instance*(db: DbConn, config: ConfigTable): JsonNode = 
+  return %*
+    {
+      "domain": config.getString("instance","uri"),
+      "title": config.getString("instance","name"),
+      "version": mastoAPIVersion(),
+      "source_url": phSourceUrl,
+      "description": config.getStringOrDefault(
+        "instance", "description",
+        config.getStringOrDefault("instance","summary", "")
+      ),
+      "usage": {
+        "users": {
+          "active_month": db.getTotalLocalUsers() # I am not sure what Mastodon considers "active" to be, but "registered" is good enough for me.
+        }
+      },
+      "thumbail": {
+        # The example has blurhash and multiple versions of an image for high-dpi screens.
+        # Those are marked optional, so I won't bother implementing them.
+        "url": config.getStringOrDefault("instance", "logo", "")
+      },
+      "languages": config.getStringArrayOrDefault("instance", "languages", @["en"]),
+      "configuration": {
         "urls": {
           "streaming_api": "wss://" & config.getString("instance","uri") & config.getStringOrDefault("instance", "endpoint", "/")
         },
-        "stats": {
-          "use_count": userCount,
-          "status_count": postCount,
-          "domain_count": domainCount
+        "vapid": {
+          "public_key": "" # TODO: Implement vapid keys
         },
-        "thumbnail": config.getStringOrDefault("instance", "logo", ""),
-        "languages": config.getStringArrayOrDefault("instance", "languages", @["en"]),
-        "registrations": config.getBoolOrDefault("user", "registrations_open", true),
-        "approval_required": config.getBoolOrDefault("user", "require_approval", false),
-        "configuration": {
-          "statuses": {
-            "max_characters": config.getIntOrDefault("user", "max_chars", 2000),
-            "max_media_attachments": config.getIntOrDefault("user", "max_attachments", 8),
-            "characters_reserved_per_url": 23
-          },
-          "media_attachments": {
-            "supported_mime_types":["image/jpeg","image/png","image/gif","image/webp","video/webm","video/mp4","video/quicktime","video/ogg","audio/wave","audio/wav","audio/x-wav","audio/x-pn-wave","audio/vnd.wave","audio/ogg","audio/vorbis","audio/mpeg","audio/mp3","audio/webm","audio/flac","audio/aac","audio/m4a","audio/x-m4a","audio/mp4","audio/3gpp","video/x-ms-asf"],
-            "image_size_limit": config.getIntOrDefault("storage","upload_size_limit", 10) * 1000000,
-            "image_matrix_limit": 16777216, # I copied this as-is from the documentation cause I will NOT be writing code to deal with media file width and height.
-            "video_size_limit": config.getIntOrDefault("storage","upload_size_limit", 10) * 1000000,
-            "video_frame_rate_limit": 60, # I also won't be writing code to check for video framerates
-            "video_matrix_limit": 2304000 # I copied this as-is from the documentation cause I will NOT be writing code to deal with media file width and height.
-          },
-          "polls": {
-            "max_options": config.getIntOrDefault("instance", "max_poll_options", 20),
-            "max_characters_per_option": 100,
-            "min_expiration": 300,
-            "max_expiration": 2629746
-          },
+        "accounts": {
+          "max_featured_tags": config.getIntOrDefault("user","max_featured_tags",10),
+          "max_pinned_statuses": config.getIntOrDefault("user","max_pins", 20),
         },
-        "contact_account": account(admin),
-        "rules": rules()
-      }
+        "statuses": {
+          "max_characters": config.getIntOrDefault("user", "max_chars", 2000),
+          "max_media_attachments": config.getIntOrDefault("user", "max_attachments", 8),
+          "characters_reserved_per_url": 23
+        },
+        "media_attachments": {
+          "supported_mime_types": ["image/jpeg", "image/png", "image/gif", "image/heic", "image/heif", "image/webp", "video/webm", "video/mp4", "video/quicktime", "video/ogg", "audio/wave", "audio/wav", "audio/x-wav", "audio/x-pn-wave", "audio/vnd.wave", "audio/ogg", "audio/vorbis", "audio/mpeg", "audio/mp3", "audio/webm", "audio/flac", "audio/aac", "audio/m4a", "audio/x-m4a", "audio/mp4", "audio/3gpp", "video/x-ms-asf"],
+          "image_size_limit": config.getIntOrDefault("storage","upload_size_limit", 10) * 1000000,
+          "image_matrix_limit": 16777216,
+          "video_size_limit": config.getIntOrDefault("storage","upload_size_limit", 10) * 1000000,
+          "video_frame_rate_limit": 60,
+          "video_matrix_limit": 2304000,
+        },
+        "polls": {
+          "max_options": config.getIntOrDefault("instance", "max_poll_options", 20),
+          "max_characters_per_option": 100,
+          "min_expiration": 300,
+          "max_expiration": 2629746
+        },
+        "translation": {
+          "enabled": false, # TODO: Switch to on once translation is implemented.
+        }
+      },
+      "registrations": {
+        "enabled": config.getBoolOrDefault("user", "registrations_open", true),
+        "approval_required": config.getBoolOrDefault("user", "require_approval", true),
+        "message": newJNull() # TODO: Maybe let instance admins customize thru a config option
+      },
+      "contact": {
+        "email": config.getStringOrDefault("instance","email",""),
+        "account": db.account(config, db.getFirstAdmin())
+      },
+      "rules": config.rules()
+    }
 
-proc v2Instance*(): JsonNode = 
-  var
-    totalUsers: int
-    admin: string
-
-  dbPool.withConnection db:
-    totalUsers = db.getTotalLocalUsers()
-    admin = db.getFirstAdmin()
-
-  configPool.withConnection config:
-    return %*
-      {
-        "domain": config.getString("instance","uri"),
-        "title": config.getString("instance","name"),
-        "version": mastoAPIVersion(),
-        "source_url": lib.phSourceUrl,
-        "description": config.getStringOrDefault(
-          "instance", "description",
-          config.getStringOrDefault("instance","summary", "")
-        ),
-        "usage": {
-          "users": {
-            "active_month": totalUsers # I am not sure what Mastodon considers "active" to be, but "registered" is good enough for me.
-          }
-        },
-        "thumbail": {
-          # The example has blurhash and multiple versions of an image for high-dpi screens.
-          # Those are marked optional, so I won't bother implementing them.
-          "url": config.getStringOrDefault("instance", "logo", "")
-        },
-        "languages": config.getStringArrayOrDefault("instance", "languages", @["en"]),
-        "configuration": {
-          "urls": {
-            "streaming_api": "wss://" & config.getString("instance","uri") & config.getStringOrDefault("instance", "endpoint", "/")
-          },
-          "vapid": {
-            "public_key": "" # TODO: Implement vapid keys
-          },
-          "accounts": {
-            "max_featured_tags": config.getIntOrDefault("user","max_featured_tags",10),
-            "max_pinned_statuses": config.getIntOrDefault("user","max_pins", 20),
-          },
-          "statuses": {
-            "max_characters": config.getIntOrDefault("user", "max_chars", 2000),
-            "max_media_attachments": config.getIntOrDefault("user", "max_attachments", 8),
-            "characters_reserved_per_url": 23
-          },
-          "media_attachments": {
-            "supported_mime_types": ["image/jpeg", "image/png", "image/gif", "image/heic", "image/heif", "image/webp", "video/webm", "video/mp4", "video/quicktime", "video/ogg", "audio/wave", "audio/wav", "audio/x-wav", "audio/x-pn-wave", "audio/vnd.wave", "audio/ogg", "audio/vorbis", "audio/mpeg", "audio/mp3", "audio/webm", "audio/flac", "audio/aac", "audio/m4a", "audio/x-m4a", "audio/mp4", "audio/3gpp", "video/x-ms-asf"],
-            "image_size_limit": config.getIntOrDefault("storage","upload_size_limit", 10) * 1000000,
-            "image_matrix_limit": 16777216,
-            "video_size_limit": config.getIntOrDefault("storage","upload_size_limit", 10) * 1000000,
-            "video_frame_rate_limit": 60,
-            "video_matrix_limit": 2304000,
-          },
-          "polls": {
-            "max_options": config.getIntOrDefault("instance", "max_poll_options", 20),
-            "max_characters_per_option": 100,
-            "min_expiration": 300,
-            "max_expiration": 2629746
-          },
-          "translation": {
-            "enabled": false, # TODO: Switch to on once translation is implemented.
-          }
-        },
-        "registrations": {
-          "enabled": config.getBoolOrDefault("user", "registrations_open", true),
-          "approval_required": config.getBoolOrDefault("user", "require_approval", true),
-          "message": newJNull() # TODO: Maybe let instance admins customize thru a config option
-        },
-        "contact": {
-          "email": config.getStringOrDefault("instance","email",""),
-          "account": account(admin)
-        },
-        "rules": rules()
-      }
-
-proc levelToStr*(l: PostPrivacyLevel): string =
+proc levelToStr(l: PostPrivacyLevel): string =
   # Our "Private" is the MastoAPI's "direct"
   # Our "FollowersOnly" is the MastoAPI's "private"
   case l:
@@ -374,7 +325,7 @@ proc levelToStr*(l: PostPrivacyLevel): string =
   of Limited: return "limited"
   of Private: return "direct"
 
-proc strToLevel*(s: string): PostPrivacyLevel =
+proc strToLevel(s: string): PostPrivacyLevel =
   # Our "Private" is the MastoAPI's "direct"
   # Our "FollowersOnly" is the MastoAPI's "private"
   case s:
@@ -386,34 +337,19 @@ proc strToLevel*(s: string): PostPrivacyLevel =
   else:
     raise newException(ValueError, "Unacceptable value for converting to Post Privacy Level: " & s)
 
-proc status*(id: string, user_id = ""): JsonNode =
+proc status*(db: DbConn, config: ConfigTable, id: string, user_id = ""): JsonNode =
   if id == "": return newJNull()
   else: result = newJObject()
 
-  var
-    post: Post
-    contents: seq[PostContent] = @[]
-    replynum, boostsnum, reactionnums = 0
-    replyto_sender = ""
-
-  dbPool.withConnection db:
+  let
     post = db.constructPost(db.getPost(id))
-    replynum = db.getNumOfReplies(post.id)
-    boostsnum = db.getNumOfBoosts(post.id)
-    reactionnums = db.getNumOfReactions(post.id)
-    if not post.replyto.isEmptyOrWhitespace():
-      replyto_sender = db.getPostSender(post.replyto)
-    contents = db.getPostContents(post.id)
-  
-  var realurl = ""
-  configPool.withConnection config:
     realurl = realURL(config)
   
   # We could re-write this to avoid declaring an extra variable
   # But then we would have to suffer the overheads of newJString() and getStr()
   # And it's probably best to just keep it this way.
   var tmp = ""
-  for content in contents:
+  for content in db.getPostContents(post.id):
     tmp = tmp & contentToHtml(content) & "\n"
 
   result = %*{
@@ -421,11 +357,12 @@ proc status*(id: string, user_id = ""): JsonNode =
     "uri": realurl & "notice/" & post.id,
     "url": realurl & "notice/" & post.id,
     "created_at": formatDate(post.written),
-    "replies_count": replynum,
-    "reblogs_count": boostsnum,
+    "replies_count": db.getNumOfReplies(post.id),
+    "reblogs_count": db.getNumOfBoosts(post.id),
     "content": tmp,
-    "favourites_count": reactionnums,
-    "account": account(post.sender),
+    "favourites_count": db.getNumOfReactions(post.id),
+    "account": db.account(config, post.sender),
+    "visibility": levelToStr(post.level),
     # TODO: Implement the following:
     "media_attachments": [],
     "sensitive": false,
@@ -433,22 +370,19 @@ proc status*(id: string, user_id = ""): JsonNode =
     "language": "en",
     "emojis": newJArray()
   }
-
-  result["visibility"] = newJString(levelToStr(post.level))
-
-  if replyto_sender != "":
+  
+  if post.replyto != "":
     result["in_reply_to_id"] = newJString(post.replyto)
-    result["in_reply_to_account_id"] = newJString(replyto_sender)
+    result["in_reply_to_account_id"] = newJString(db.getPostSender(post.replyto))
   else:
     result["in_reply_to_id"] = newJNull()
     result["in_reply_to_account_id"] = newJNull()
 
   if user_id != "":
-    dbPool.withConnection db:
-      result["favourited"] = newJBool(db.hasAnyReaction(post.id, user_id))
-      result["reblogged"] = newJBool(db.hasAnyBoost(post.id, user_id))
-      result["bookmarked"] = newJBool(db.bookmarkExists(user_id, post.id))
-      ## TODO: If we have implemented mutes and blocks, then add the muted attribute.
-      ## TODO: If we have implemented pinned posts, then add the pinned attribute.
-      ## TODO: If we have implemented filters, then add the filtered attribute.
-      ## or actually, keep it optional, its alright.
+    result["favourited"] = newJBool(db.hasAnyReaction(post.id, user_id))
+    result["reblogged"] = newJBool(db.hasAnyBoost(post.id, user_id))
+    result["bookmarked"] = newJBool(db.bookmarkExists(user_id, post.id))
+    ## TODO: If we have implemented mutes and blocks, then add the muted attribute.
+    ## TODO: If we have implemented pinned posts, then add the pinned attribute.
+    ## TODO: If we have implemented filters, then add the filtered attribute.
+    ## or actually, keep it optional, its alright.

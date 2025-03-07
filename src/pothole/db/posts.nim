@@ -1,4 +1,4 @@
-# Copyright © penguinite 2024 <penguinite@tuta.io>
+# Copyright © penguinite 2024-2025 <penguinite@tuta.io>
 #
 # This file is part of Pothole.
 # 
@@ -14,26 +14,21 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Pothole. If not, see <https://www.gnu.org/licenses/>. 
 #
-# quark/new/post.nim:
+# db/posts.nim:
 ## This module contains all the logic for handling posts.
 ## 
 ## Including basic processing, database storage,
 ## database retrieval, modification, deletion and so on
 ## and so forth.
 
-# From Quark
-import quark/private/[macros, database]
-import quark/[strextra, shared, tag, follows]
-export shared
+# From Pothole
+import private/utils, ../[strextra, shared], tag, follows
 
 # From the standard library
-import std/[tables, times]
-from std/strutils import split
+import std/[tables, times, strutils]
 
 # From elsewhere
 import db_connector/db_postgres, rng
-
-export Post, PostPrivacyLevel, PostContent, PostContentType
 
 # Game plan when inserting a post:
 # Insert the post
@@ -49,39 +44,13 @@ export Post, PostPrivacyLevel, PostContent, PostContentType
 # Remove existing content row
 # Create new one
 
-proc newPost*(
-  sender: string, content: seq[PostContent], recipients: seq[string] = @[],
-  replyto = "", written = now().utc, modified = false, local = true,
-  level = Public, id = randstr(32), client = "0",
-  reactions = initTable[string,seq[string]](),
-  boosts = initTable[string,seq[string]]()
-): Post =
-  return Post(
-    id: id,
-    recipients: recipients,
-    sender: sender,
-    replyto: replyto,
-    content: content,
-    written: written,
-    modified: modified,
-    local: local,
-    client: client,
-    level: level,
-    reactions: reactions,
-    boosts: boosts
-  )
-
-proc text*(content: string, date: DateTime = now().utc, format = "txt"): PostContent =
-  result = PostContent(kind: Text)
-  result.text = content
-  result.published = date
-  result.format = format
-  return result
+proc newPost*(sender: string, content: seq[PostContent], recipients: seq[string] = @[],replyto = "", written = now().utc, modified = false, local = true,level = Public, id = randstr(32), client = "0",reactions = initTable[string,seq[string]](),boosts = initTable[string,seq[string]]()): Post = Post(id: id,recipients: recipients,sender: sender,replyto: replyto,content: content,written: written,modified: modified,local: local,client: client,level: level,reactions: reactions,boosts: boosts)
+proc text*(content: string, date: DateTime = now().utc, format = "txt"): PostContent = PostContent(kind: Text, text: content, published: date, format: format)
 
 proc constructPost*(db: DbConn, row: Row): Post =
-  ## Converts a post minimally.
+  ## Constructs a post out of a database row, minimally.
   ## This means no reactions, no boosts
-  ## and no post content.
+  ## and no content.
   
   var i: int = -1;
 
@@ -91,7 +60,7 @@ proc constructPost*(db: DbConn, row: Row): Post =
       inc(i)
 
     when result.get(key) is bool:
-      result.get(key) = parseBool(row[i])
+      result.get(key) = row[i] == "t"
     when result.get(key) is string:
       result.get(key) = row[i]
     when result.get(key) is seq[string]:
@@ -175,7 +144,7 @@ proc addPost*(db: DbConn, post: Post) =
 proc postIdExists*(db: DbConn, id: string): bool =
   ## A function to see if a post id exists in the database
   ## The id supplied can be plain and un-escaped. It will be escaped and sanitized here.
-  return has(db.getRow(sql"SELECT local FROM posts WHERE id = ?;", id))
+  has(db.getRow(sql"SELECT local FROM posts WHERE id = ?;", id))
 
 proc updatePost*(db: DbConn, id, column, value: string) =
   ## A procedure to update a post using it's ID.
@@ -189,26 +158,23 @@ proc getPost*(db: DbConn, id: string): Row =
   ## 
   ## You will need to pass this on further to constructPost()
   ## or it's semi and full variants. As this just returns a database row.
-  let post = db.getRow(sql"SELECT * FROM posts WHERE id = ?;", id)
-  if not post.has():
-    raise newException(DbError, "Couldn't find post with id \"" & id & "\"")
-  return post
+  db.getRow(sql"SELECT * FROM posts WHERE id = ?;", id)
 
 proc getPostsByUser*(db: DbConn, id: string, limit: int = 15): seq[string] = 
   ## A procedure that only fetches the IDs of posts made by a specific user.
   ## This is used to quickly get a list over every post made by a user, for, say,
   ## potholectl or a pothole admin frontend.
-  var sqlStatement = sql"SELECT id FROM posts WHERE sender = ?;"
-  if limit != 0:
-    sqlStatement = sql("SELECT id FROM posts WHERE sender = ? LIMIT " & $limit & ";")
+  var sqlStatement = "SELECT id FROM posts WHERE sender = ?"
 
-  for post in db.getAllRows(sqlStatement, id):
+  if limit != 0: sqlStatement.add(" LIMIT " & $limit & ";")
+  else: sqlStatement.add(";")
+
+  for post in db.getAllRows(sql(sqlStatement), id):
     result.add(post[0])
-  return result
 
 proc getNumPostsByUser*(db: DbConn, id: string): int =
   ## Returns the number of posts made by a specific user.
-  return len(db.getAllRows(sql"SELECT 0 FROM posts WHERE sender = ?;", id))
+  len(db.getAllRows(sql"SELECT 0 FROM posts WHERE sender = ?;", id))
 
 proc rowToContent*(db: DbConn, row: Row, pid: string): PostContent =
   ## Converts a row consisting of a kind, and cid into a proper PostContent object.
@@ -238,7 +204,6 @@ proc rowToContent*(db: DbConn, row: Row, pid: string): PostContent =
 proc getPostContents*(db: DbConn, id: string): seq[PostContent] = 
   for row in db.getAllRows(sql"SELECT kind,cid FROM posts_content WHERE pid = ?;", id):
     result.add(db.rowToContent(row, id))
-  return result
 
 proc getNumTotalPosts*(db: DbConn, local = true): int =
   ## A procedure to get the total number of posts. You can choose where or not they should be local-only with the local parameter.
@@ -256,10 +221,10 @@ proc deletePost*(db: DbConn, id: string) =
   db.exec(sql"DELETE FROM posts WHERE id = ?;", id)
 
 proc getNumOfReplies*(db: DbConn, post_id: string): int =
-  return len(db.getAllRows(sql"SELECT 0 FROM posts WHERE replyto = ?;", post_id))
+  len(db.getAllRows(sql"SELECT 0 FROM posts WHERE replyto = ?;", post_id))
 
 proc getPostSender*(db: DbConn, post_id: string): string =
-  return db.getRow(sql"SELECT sender FROM posts WHERE id = ?;", post_id)[0]
+  db.getRow(sql"SELECT sender FROM posts WHERE id = ?;", post_id)[0]
 
 proc updatePostSender*(db: DbConn, post_id, sender: string) =
   ## Updates the `sender` for any post
@@ -275,13 +240,11 @@ proc getLocalPosts*(db: DbConn, limit: int = 15): seq[Row] =
   ## 
   ## This returns seq[Row], so you might want to pass it on to a constructPost() like proc.
   
-  var sqlStatement: SqlQuery
+  var sqlStatement = "SELECT * FROM posts WHERE local = TRUE"
   if limit != 0:
-    sqlStatement = sql("SELECT * FROM posts WHERE local = TRUE LIMIT " & $limit & ";")
-  else:
-    sqlStatement = sql("SELECT * FROM posts WHERE local = TRUE;")
+    sqlStatement.add(" LIMIT " & $limit)
   
-  for post in db.getAllRows(sqlStatement):
+  for post in db.getAllRows(sql(sqlStatement & ";")):
     result.add(post)
   return result
 
@@ -294,25 +257,24 @@ proc contentToHtml*(content: PostContent): string =
     ## TODO: Add support for HTML, ie. do HTML sanitization the way that Mastodon does it.
     case content.format:
     of "txt", "plain":
-      result.add("<p>" & safeHtml(content.text) & "</p>")
+      result.add("<p>" & htmlEscape(content.text) & "</p>")
     of "md":
       result.add(rstToHtml(
-          safeHtml(content.text), {roPreferMarkdown}, newStringTable()
+          htmlEscape(content.text), {roPreferMarkdown}, newStringTable()
         )
       )
     of "rst":
       result.add(
-        rstToHtml(safeHtml(content.text), {}, newStringTable())
+        rstToHtml(htmlEscape(content.text), {}, newStringTable())
       )
     else: raise newException(ValueError, "Unexpected text format: " & $(content.format))
   else: raise newException(ValueError, "Unexpected content type: " & $(content.kind))
-  return result
 
 proc getPostPrivacyLevel*(db: DbConn, id: string): PostPrivacyLevel =
-  return toPrivacyLevelFromDb(db.getRow(sql"SELECT level FROM posts WHERE id =?;", id)[0])
+  toPrivacyLevelFromDb(db.getRow(sql"SELECT level FROM posts WHERE id = ?;", id)[0])
 
 proc getSender*(db: DbConn, pid: string): string =
-  return db.getRow(sql"SELECT sender FROM posts WHERE id = ?;", pid)[0]
+  db.getRow(sql"SELECT sender FROM posts WHERE id = ?;", pid)[0]
 
 proc getRecipients*(db: DbConn, pid: string): seq[string] =
   result = split(db.getRow(sql"GET recipients FROM posts WHERE id = ?;", pid)[0], ",")
@@ -322,7 +284,6 @@ proc getRecipients*(db: DbConn, pid: string): seq[string] =
   # clears the list if two specific conditions are met.
   if len(result) == 1 and result[0] == "":
     result = @[]
-  return result
 
 proc canSeePost*(db: DbCOnn, uid, pid: string, level: PostPrivacyLevel): bool =
   case level:

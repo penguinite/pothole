@@ -25,7 +25,7 @@
 # Quote-boosts are not considered true boosts. They're just posts with a link.
 
 # From Pothole
-import private/utils, users, ../[lib, strextra]
+import private/utils, ../[shared, strextra]
 
 # From somewhere in the standard library
 import std/tables

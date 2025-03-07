@@ -1,4 +1,4 @@
-# Copyright © penguinite 2024 <penguinite@tuta.io>
+# Copyright © penguinite 2024-2025 <penguinite@tuta.io>
 #
 # This file is part of Pothole. Specifically, the Quark repository.
 # 
@@ -14,32 +14,33 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Pothole. If not, see <https://www.gnu.org/licenses/>. 
 #
-# quark/db/email_codes.nim:
+# db/email_codes.nim:
 ## This module handles Email verification codes for users.
-## It does not handle sending them, Pothole, the server program has
-## a module for sending emails, pothole/email
+## This module does not handle sending email verification codes,
+## there is a separate module `pothole/email.nim` to do this exact job.
 
-# From Quark
-import quark/private/database
-import quark/[users, strextra]
+# TODO: Merge this module with the email sending module.
+
+# From Pothole
+import private/utils, users, ../strextra
 
 # From somewhere in the standard library
 import std/[times]
 
 # From elsewhere (third-party libraries)
-import rng
+import rng, db_connector/db_postgres
 
 proc emailCodeExists*(db: DbConn, code: string): bool =
-  return has(db.getRow(sql"SELECT id FROM email_codes WHERE id = ?;", code))
+  has(db.getRow(sql"SELECT id FROM email_codes WHERE id = ?;", code))
 
 proc emailCodeExistsForUser*(db: DbConn, user: string): bool =
-  return has(db.getRow(sql"SELECT id FROM email_codes WHERE uid = ?;", user))
+  has(db.getRow(sql"SELECT id FROM email_codes WHERE uid = ?;", user))
 
 proc getEmailCodeByUser*(db: DbConn, code: string): string =
-  return db.getRow(sql"SELECT uid FROM email_codes WHERE id = ?;", code)[0]
+  db.getRow(sql"SELECT uid FROM email_codes WHERE id = ?;", code)[0]
 
 proc emailCodeValid*(db: DbConn, code, user: string): bool =
-  return db.emailCodeExists(code) and db.getEmailCodeByUser(code) == user
+  db.emailCodeExists(code) and db.getEmailCodeByUser(code) == user
 
 proc deleteEmailCode*(db: DbConn, code: string) =
   db.exec(sql"DELETE FROM email_codes WHERE id = ?;", code)
@@ -48,21 +49,16 @@ proc deleteEmailCodeByUser*(db: DbConn, user: string) =
   db.exec(sql"DELETE FROM email_codes WHERE uid = ?;", user)
 
 proc createEmailCode*(db: DbConn, user: string): string =
-  var id = randstr(32)
+  result = randstr(32)
   
   # Check if another code already exists for this user first.
-  let testRow = db.getRow(sql"SELECT id FROM email_codes WHERE uid = ?;", user)
-  if has(testRow):
-    while db.emailCodeExists(id):
-      id = randstr(32)
-    
-    # Delete the previous code.
-    # To avoid DB errors.
-    # And also for security reasons.
-    db.deleteEmailCode(testRow[0])
+  # And delete it.
+  let row = db.getRow(sql"SELECT id FROM email_codes WHERE uid = ?;", user)
+  if has(row):
+    db.deleteEmailCode(row[0])
+    result = randstr(32)
 
-  db.exec(sql"INSERT INTO email_codes VALUES (?,?,?);", id, user, utc(now()).toDbString())
-  return id
+  db.exec(sql"INSERT INTO email_codes VALUES (?,?,?);", result, user, utc(now()).toDbString())
 
 proc cleanupCodes*(db: DbConn) =
   for row in db.getAllRows(sql"SELECT id,uid,date FROM email_codes;"):

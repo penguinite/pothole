@@ -16,7 +16,7 @@
 #
 # assets.nim:
 ## This module basically acts as the assets store
-import std/tables
+import std/tables, iniplus
 proc getAsset*(fn: string): string =
   # Get static asset
   const table = {
@@ -27,3 +27,8 @@ proc getAsset*(fn: string): string =
     "style.css": staticRead("../assets/style.css")
   }.toTable
   return table[fn]
+
+proc getAvatar*(config: ConfigTable, user_id: string): string =
+  return # TODO: Implement
+proc getHeader*(config: ConfigTable, user_id: string): string =
+  return # TODO: Implement

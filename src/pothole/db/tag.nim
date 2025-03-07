@@ -20,19 +20,18 @@
 import private/utils, ../shared, std/times, db_connector/db_postgres
 
 proc tagExists*(db: DbConn, tag: string): bool =
-  return has(db.getRow(sql"SELECT trendable FROM tag WHERE name = ?;", tag))
+  has(db.getRow(sql"SELECT trendable FROM tag WHERE name = ?;", tag))
 
 proc getTagUrl*(db: DbConn, tag: string): string =
-  return db.getRow(sql"SELECT url FROM tag WHERE name = ?;", tag)[0]
+  db.getRow(sql"SELECT url FROM tag WHERE name = ?;", tag)[0]
 
 proc userFollowsTag*(db: DbConn, tag, user: string): bool =
   ## Returns true if a user (supplied by ID) follows a hashtag
-  return has(db.getRow(sql"SELECT following FROM tag_follows WHERE follower = ? AND following = ?;", user, tag))
+  has(db.getRow(sql"SELECT following FROM tag_follows WHERE follower = ? AND following = ?;", user, tag))
 
 proc getTagsFollowedByUser*(db: DbConn, user: string, limit = 100): seq[string] =
   for i in db.getAllRows(sql"SELECT following FROM tag_follows WHERE follower = ? LIMIT ?;", user, $(limit)):
     result.add(i[0])
-  return result
 
 proc followTag*(db: DbConn, tag, user: string) =
   db.exec(
@@ -54,7 +53,7 @@ proc createTag*(db: DbConn, name: string, url = "", desc = "", trendable = true,
   )
 
 proc hashtag*(name: string, date = now().utc): PostContent =
-  return PostContent(
+  PostContent(
     kind: Tag, tag_used: name, tag_date: date
   )
 
@@ -80,7 +79,6 @@ proc getTagUsagePostNum*(db: DbConn, tag: string, days = 2): seq[int] =
       inc x
     
     result.add(x)
-  return result
 
 proc getTagUsageUserNum*(db: DbConn, tag: string, days = 2): seq[int] =
   ## Returns the number of accounts using a tag in the past couple X days
@@ -92,19 +90,15 @@ proc getTagUsageUserNum*(db: DbConn, tag: string, days = 2): seq[int] =
     for row in db.getAllRows(
       sql"SELECT DISTINCT ON (sender) 0 FROM posts_tag WHERE tag = ? AND use_date = ?;",
       tag, getDateStr(now().utc - i.days)
-    ):
-      inc x
-    
+    ): inc x
     result.add(x)
-  return result
 
 proc getPostTags*(db: DbConn, post: string): seq[string] =
   for row in db.getAllRows(sql"SELECT tag FROM posts_tag WHERE pid = ?;", post):
     result.add(row[0])
-  return result
 
 proc postHasTag*(db: DbConn, post, tag: string): bool =
-  return has(db.getRow(sql"SELECT 0 FROM posts_tag WHERE pid = ? AND tag = ?;", post, tag))
+  has(db.getRow(sql"SELECT 0 FROM posts_tag WHERE pid = ? AND tag = ?;", post, tag))
 
 proc getTagUsageDays*(days = 2): seq[int64] =
   ## Used only for the Tag ApiEntity

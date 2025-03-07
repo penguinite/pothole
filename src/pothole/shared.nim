@@ -47,6 +47,9 @@ template error*(str: varargs[string, `$`]) =
   quit(1)
 
 type
+  FollowStatus* = enum
+    NoFollowRequest, PendingFollowRequest, AcceptedFollowRequest
+
   PostPrivacyLevel* = enum
     Public, Unlisted, FollowersOnly, Limited, Private
 

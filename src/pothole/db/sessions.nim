@@ -18,10 +18,7 @@
 ## This module contains all database logic for handling user sessions.
 ## Such as verifying them, creating them and also deleting them
 ## if the user demands it or if they have gone out-of-date.
-import private/utils,
-import quark/[users, strextra]
-import quark/private/database
-import rng
+import private/utils, users, ../strextra
 
 # From somewhere in the standard library
 import std/[times]
@@ -30,44 +27,42 @@ import std/[times]
 import rng, db_connector/db_postgres
 
 proc updateTimestampForSession*(db: DbConn, id: string) = 
-  if not has(db.getRow(sql"SELECT id FROM sessions WHERE id = ?;", id)):
-    return
-  db.exec(sql"UPDATE sessions SET last_used = ? WHERE id = ?;", utc(now()).toDbString(), id)
+  if has(db.getRow(sql"SELECT id FROM sessions WHERE id = ?;", id)):
+    db.exec(sql"UPDATE sessions SET last_used = ? WHERE id = ?;", utc(now()).toDbString(), id)
 
 proc sessionExists*(db: DbConn, id: string): bool =
   ## Checks if a session exists and returns whether or not it does.
   db.updateTimestampForSession(id)
-  return has(db.getRow(sql"SELECT uid FROM sessions WHERE id = ?;", id))
+  has(db.getRow(sql"SELECT uid FROM sessions WHERE id = ?;", id))
 
 proc createSession*(db: DbConn, user: string, date: DateTime = now().utc): string =
   ## Creates a session for a user and returns it's id
   ## The user parameter should contain a user's id.
-  var id = randstr(22)
-  while db.sessionExists(id):
-    id = randstr(22)
+  result = randstr(22)
+  while db.sessionExists(result):
+    result = randstr(22)
   
   db.exec(
     sql"INSERT INTO sessions VALUES (?, ?, ?);",
-    id,
+    result,
     user,
     toDbString(date)
   )
-  return id
 
 proc getSessionUser*(db: DbConn, id: string): string =
   ## Retrieves the user id associated with a session.
   ## The id parameter should contain the session id.
-  return db.getRow(sql"SELECT uid FROM sessions WHERE id = ?;", id)[0]
+  db.getRow(sql"SELECT uid FROM sessions WHERE id = ?;", id)[0]
 
 proc getSessionUserHandle*(db: DbConn, id: string): string =
   ## Retrieves the user handle associated with a session.
   ## The id parameter should contain the session id.
-  return db.getHandleFromId(db.getSessionUser(id))
+  db.getHandleFromId(db.getSessionUser(id))
 
 proc getSessionDate*(db: DbConn, id: string): DateTime =
   ## Retrieves the last use date associated with a session.
   ## The id parameter should contain the session id.
-  return toDateFromDb(
+  toDateFromDb(
     db.getRow(sql"SELECT last_used FROM sessions WHERE id = ?;", id)[0]
   )
 
@@ -84,13 +79,7 @@ proc sessionValid*(db: DbConn, id: string): bool =
   ## 
   ## Slightly different from `sessionExpired()`, since 
   ## `sessionExpired()` does not check if the users match
-  if not db.sessionExists(id):
-    return false
-
-  if db.sessionExpired(id):
-    return false
-
-  return true
+  return db.sessionExists(id) and not db.sessionExpired(id)
 
 proc deleteSession*(db: DbConn, id: string) =
   ## Deletes a session.
@@ -123,14 +112,10 @@ proc cleanSessionsVerbose*(db: DbConn): seq[(string, string)] =
       db.deleteSession(row[0])
 
 proc getTotalSessions*(db: DbConn): int =
-  result = 0
-  for row in db.getAllRows(sql"SELECT id FROM sessions;"):
+  for row in db.getAllRows(sql"SELECT 0 FROM sessions;"):
     inc(result)
-  return result
 
 proc getTotalValidSessions*(db: DbConn): int =
-  result = 0
-  for row in db.getAllRows(sql"SELECT id FROM sessions;"):
+  for row in db.getAllRows(sql"SELECT 0 FROM sessions;"):
     if not db.sessionExpired(row[0]):
       inc result
-  return result 

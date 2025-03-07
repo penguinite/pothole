@@ -16,20 +16,14 @@
 # api/accounts.nim:
 ## This module contains all the routes for the accounts method in the mastodon api.
 
-# From somewhere in Quark
-import quark/[strextra, oauth, apps, users, auth_codes]
-
-# From somewhere in Pothole
-import pothole/[database, conf]
-
-# Helper procs
-import pothole/helpers/[req, resp, routes, entities]
+# From Pothole
+import ../db/[oauth, apps, users, auth_codes], ../[strextra, shared, database, conf, routes]
 
 # From somewhere in the standard library
 import std/json
 
 # From nimble/other sources
-import mummy
+import mummy, iniplus, db_connector/db_postgres
 
 proc accountsVerifyCredentials*(req: Request) =
   var headers: HttpHeaders

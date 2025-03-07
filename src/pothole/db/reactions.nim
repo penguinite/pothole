@@ -15,37 +15,37 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with Pothole. If not, see <https://www.gnu.org/licenses/>. 
 #
-# db/quark/reactions.nim:
+# db/reactions.nim:
 ## This module contains all database logic for handling reactions.
-## Including creation, retrieval, fetching and whatnot.
+## Reactions include likes, favorites or whatever.
+## They're flexible by design.
 
-# From somewhere in Quark
-import quark/private/database
+# From somewhere in Pothole
+import private/utils
 
-# From somewhere in the standard library
+# From standard library
 import std/tables
+
+# From third-parties
+import db_connector/db_postgres
 
 proc getReactions*(db: DbConn, id: string): Table[string, seq[string]] =
   ## Retrieves a Table of reactions for a post. Result consists of a table where the keys are the specific reaction and the value is a sequence of reactors.
   for row in db.getAllRows(sql"SELECT uid,reaction FROM reactions WHERE pid = ?;", id):
     result[row[1]].add(row[0])
-  return result
 
 proc getNumOfReactions*(db: DbConn, id: string): int =
-  for row in db.getAllRows(sql"SELECT reaction FROM reactions WHERE pid = ?;", id):
+  for row in db.getAllRows(sql"SELECT 0 FROM reactions WHERE pid = ?;", id):
     inc(result)
-  return result
 
 proc hasAnyReaction*(db: DbConn, pid, uid: string): bool =
   return has(db.getRow(sql"SELECT reaction FROM reactions WHERE pid = ? AND uid = ?;", pid, uid))
 
 proc addReaction*(db: DbConn, pid,uid,reaction: string) =
   ## Adds an individual reaction
-  # Check if a reaction already exists previous
-  if db.hasAnyReaction(pid, uid):
-    return
-
-  db.exec(sql"INSERT INTO reactions VALUES (?,?,?);",pid,uid,reaction)
+  # Check if a reaction already exists previously
+  if not db.hasAnyReaction(pid, uid):
+    db.exec(sql"INSERT INTO reactions VALUES (?,?,?);",pid,uid,reaction)
 
 proc addBulkReactions*(db: DbConn, pid: string, table: Table[string, seq[string]]) =
   ## Adds an entire table of reactions to the database
@@ -59,4 +59,4 @@ proc removeReaction*(db: DbConn, pid,uid: string) =
 
 proc hasReaction*(db: DbConn, pid,uid,reaction: string): bool =
   ## Checks if a post has a reaction. Everything must match.
-  return has(db.getRow(sql"SELECT reaction FROM reactions WHERE pid = ? AND uid = ? AND reaction = ?;", pid, uid, reaction))
+  has(db.getRow(sql"SELECT reaction FROM reactions WHERE pid = ? AND uid = ? AND reaction = ?;", pid, uid, reaction))
