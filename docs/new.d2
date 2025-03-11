@@ -1,0 +1,23 @@
+roles: {
+  shape: sql_table
+  id: smallint PRIMARY KEY UNIQUE
+  name: TEXT
+}
+
+users: {
+  shape: sql_table
+
+  id: UUID PRIMARY KEY DEFAULT gen_random_uuid()
+  
+  handle: TEXT UNIQUE NOT NULL
+  domain: TEXT
+  display: TEXT DEFAULT 'New User'
+  email: TEXT
+  bio: TEXT
+  pass: TEXT
+  salt: TEXT
+  kdf: smallint NOT NULL DEFAULT 0
+  role: smallint NOT NULL DEFAULT 0
+  discoverable: BOOLEAN NOT NULL DEFAULT FALSE
+  email_verified: BOOLEAN NOT NULL DEFAULT FALSE
+}

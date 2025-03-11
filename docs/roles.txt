@@ -1,0 +1,8 @@
+Default roles for Pothole
+Format: ID NAME DESCRIPTION
+
+-1,Frozen user,A frozen user can't login or post or do anything
+0,User,A regular unapproved user
+1,Approved user, An approved user
+2,Moderator,A moderator who has the ability to freeze users
+3,Administrator,An administrator who has the ability to purge users and their posts

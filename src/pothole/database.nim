@@ -21,7 +21,7 @@
 ## Keep in mind, you will still need to import the actual database logic from the db/ folder
 
 # From somewhere in the standard library
-import std/[os, strutils]
+import std/os
 
 # Third party libraries
 import waterpark/postgres, db_connector/db_postgres, iniplus
@@ -33,49 +33,18 @@ import waterpark/postgres, db_connector/db_postgres, iniplus
 ## Unlike Pleroma, Pothole's config is entirely stored in the config file.
 ## There is no way to configure Pothole from the database alone.
 ## So we do not need a tool to generate SQL for a specific instance.
-## 
-## Although, to make setup easier, we could make an autoconfig tool
-## that does everything we want, and we would just need the user to
-## pipe the sql file to the postgres user.
-
-template executeFile(db: DbConn, sqlData: string): untyped =
-  # TODO: So, I get an error when executing multi-line statements and I don't know why.
-  # What I decided to do was put every single SQL query/instruction all on their own separate lines.
-  # and then make a sort-of mini-parser.
-  # 
-  # The upside is that this works! The downside is that it makes modifying and reading the setup SQL *EXTREMELY* difficult.
-  # So y'know, figure out a way to do multi-line statements or we will all go insane.
-  var i = 0
-  for line in sqlData.splitLines:
-    inc i
-    if line.startsWith("--") or line.isEmptyOrWhitespace():
-      continue # If this is a comment, or if its mostly empty then skip.
-
-    # Otherwise, execute the line as SQL code.
-    try:
-      db.exec(sql(line))
-    except CatchableError as err:
-      raise newException(DbError, "Line " & $i & " in setup.sql; Couldn't run the init script: " & err.msg)
 
 proc setup*(name, user, host, password: string,schemaCheck: bool = true): DbConn =
   ## setup() is called whenever you want to initialize a database schema.
   ## It does not merely launch a database connection, it also makes sure that every table needed is there.
-  
-  if host.startsWith("__eat_flaming_death"):
-    # The host "__eat_flaming_death" is used in some documentation examples
-    # and so its important for us to add a special case just for it.
-    # TODO: Figure out what documentation is using this workaround, and patch it.
-    return
-
   result = open(host, user, password, name)
-  result.executeFile(staticRead("assets/setup.sql"))
-  return result
+  result.exec(sql(staticRead("assets/setup.sql")))
 
 proc purge*(db: DbConn) =
   ## Purges all of the data, tables and whatnot from the database.
   ## 
   ## Obviously a destructive procedure, don't run carelessly...
-  db.executeFile(staticRead("assets/purge.sql"))
+  db.exec(sql(staticRead("assets/purge.sql")))
 
 proc getDbHost*(config: ConfigTable): string =
   if existsEnv("POTHOLE_DBHOST"):
