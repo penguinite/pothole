@@ -6,13 +6,16 @@ SET client_encoding = 'UTF8';
 -- TODO: Fix this in the db_connector library so that everyone can enjoy injection-free data operations.
 SET standard_conforming_strings = on;
 
--- A "kind" is a bit like a role.
-CREATE TABLE IF NOT EXISTS kinds (
-    id smallint PRIMARY KEY UNIQUE,
-);
+-- The meta table is used to store metadata about the pothole database itself.
+-- It may be used to track schema versions.
+CREATE TABLE IF NOT EXISTS meta (k TEXT, v TEXT);
 
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    kdf smallint NOT NULL DEFAULT 0, -- See KDF file in docs/db/ folder
+    role smallint[] NOT NULL DEFAULT 0, -- See Roles file in docs/db/ folder
+    discoverable BOOLEAN NOT NULL DEFAULT false, -- Whether user should be listed publicly or not.
+    email_verified BOOLEAN NOT NULL DEFAULT false,
     handle TEXT UNIQUE NOT NULL, -- The "username"
     domain TEXT, -- Domain name of a remote user, empty for local users
     display TEXT DEFAULT 'New User', -- Display name
@@ -20,10 +23,6 @@ CREATE TABLE IF NOT EXISTS users (
     bio TEXT, -- Plain-text only. with emoji support.
     pass TEXT, -- Password
     salt TEXT,
-    kdf smallint NOT NULL DEFAULT 0, -- See KDF file in docs/db/ folder
-    kind smallint NOT NULL DEFAULT 0, -- See Roles file in docs/db/ folder (or bottom of this file)
-    discoverable BOOLEAN NOT NULL DEFAULT false, -- Whether user should be listed publicly or not.
-    email_verified BOOLEAN NOT NULL DEFAULT false
 );
 
 -- An app is sort of like a session, but for programs.
@@ -37,45 +36,89 @@ CREATE TABLE IF NOT EXISTS apps (
     link TEXT
 );
 
--- id, TEXT PRIMARY KEY NOT NULL: The Post id
--- recipients, TEXT: A comma-separated list of recipients since postgres arrays are a nightmare.
--- sender, TEXT NOT NULL: A string containing the sender's id
--- replyto, TEXT DEFAULT '': A string containing the post that the sender is replying to, if at all.
--- written, TIMESTAMP NOT NULL: A timestamp containing the date that the post was originally written (and published)
--- modified, BOOLEAN NOT NULL DEFAULT FALSE: A boolean indicating whether the post was modified or not.
--- local, BOOLEAN NOT NULL: A boolean indicating whether the post originated from this server or other servers.
--- client, TEXT NOT NULL DEFAULT '0': The client that sent the post
--- level, smallint NOT NULL DEFAULT 0: The privacy level for the post
 CREATE TABLE IF NOT EXISTS posts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    recipients TEXT, -- Space-separated list of recipients
-    sender TEXT NOT NULL, -- 
-    replyto TEXT,
+    sender UUID NOT NULL,
+    replyto UUID,
+    client UUID,
     created TIMESTAMP NOT NULL,
-    modified BOOLEAN NOT NULL DEFAULT FALSE,
-    client TEXT NOT NULL DEFAULT '0',
-    is_local BOOLEAN NOT NULL,
     privacy_level smallint NOT NULL DEFAULT 0,
+    is_local BOOLEAN NOT NULL,
+    recipients TEXT[], -- list of user IDs mentioned
+    tags TEXT[], -- Set of hashtags used in current version of post.
     foreign key (sender) references users(id),
+    foreign key (replyto) references posts(id),
     foreign key (client) references apps(id)
 );
 
+-- This table stores not just current versions of posts but also
+-- past versions and it includes info on when every single one was
+-- published.
+CREATE TABLE IF NOT EXISTS posts_text (
+    pid UUID PRIMARY KEY NOT NULL,
+    published TIMESTAMP,
+    format smallint NOT NULL DEFAULT 0, -- See "Formats" file in docs/db/ for more info
+    content TEXT,
+    foreign key (pid) references posts(id)
+);
 
+-- A reaction acts as a sort of like
+-- (or favorite if you're into mastodon parlance.)
+--
+-- In pothole however, these are more general so they can
+-- store all sorts of things.
+CREATE TABLE IF NOT EXISTS reactions (
+    pid UUID NOT NULL, -- Stands for Post ID
+    uid UUID NOT NULL, -- Stands for User ID
+    reaction TEXT NOT NULL, -- Specific reaction used. Can be anything
+    foreign key (pid) references posts(id),
+    foreign key (uid) references users(id)
+);
 
--- Default roles:
--- Frozen user role, user is not allowed to do anything.
-INSERT INTO kinds VALUES (-1) ON CONFLICT DO NOTHING;
+-- A boost is a sort of re-tweet, it's a way of sharing a message to a group.
+-- And yes, "quote boosts" are just posts with a link at the bottom.
+-- They're not true boosts.
+CREATE TABLE IF NOT EXISTS boosts (
+    pid UUID NOT NULL, -- Stands for Post ID
+    uid UUID NOT NULL, -- Stands for User ID
+    -- This is similar to privacy_level in the posts table.
+    level smallint NOT NULL DEFAULT 0,
+    foreign key (pid) references posts(id),
+    foreign key (uid) references users(id)
+);
 
--- Regular unapproved user role, user is allowed to do anything
--- (as long as instance doesn't enable require_approval)
-INSERT INTO kinds VALUES (0) ON CONFLICT DO NOTHING;
+-- Stores information about any given hashtag
+CREATE TABLE IF NOT EXISTS tag (
+    -- Is tag allowed to show up on trending tab
+    trendable BOOLEAN DEFAULT true, 
+    -- Can this tag automatically be linked in a post?
+    usable BOOLEAN DEFAULT true, 
+    -- Does this tag require a review by an admin?
+    requires_review BOOLEAN DEFAULT false,
+    -- Whether a user is **required** to use this tag or other system tags on a post.
+    -- This is required for implementing "post categories"
+    -- (Think of discord channels or forum categories)
+    system BOOLEAN DEFAULT false, 
+    name TEXT PRIMARY KEY NOT NULL,
+    url TEXT NOT NULL,
+    description TEXT
+);
 
--- Approved user role, user is allowed to do anything
-INSERT INTO kinds VALUES (1) ON CONFLICT DO NOTHING;
+-- For users to follow other users
+CREATE TABLE IF NOT EXISTS user_follows (
+    follower UUID NOT NULL,
+    following TEXT NOT NULL,
+    approved BOOLEAN NOT NULL,
+    foreign key (follower) references users(id),
+    foreign key (following) references users(id)
+);
 
--- Moderator role, user is allowed to freeze users
-INSERT INTO kinds VALUES (2) ON CONFLICT DO NOTHING;
+-- For users to follow hashtags
+CREATE TABLE IF NOT EXISTS tag_follows (
+    follower UUID NOT NULL,
+    following TEXT NOT NULL,
+    foreign key (follower) references users(id),
+    foreign key (following) references tag(name)
+);
 
--- Administrator role, user is allowed to change roles of other users (no limits).
-INSERT INTO kinds VALUES (3) ON CONFLICT DO NOTHING;
 
