@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS users (
     discoverable BOOLEAN NOT NULL DEFAULT false, -- Whether user should be listed publicly or not.
     email_verified BOOLEAN NOT NULL DEFAULT false,
     handle TEXT UNIQUE NOT NULL, -- The "username"
-    domain TEXT, -- Domain name of a remote user, empty for local users
+    domain TEXT, -- Domain name of a remote user, null for local users
     display TEXT DEFAULT 'New User', -- Display name
     email TEXT,
     bio TEXT, -- Plain-text only. with emoji support.
@@ -29,7 +29,6 @@ CREATE TABLE IF NOT EXISTS users (
 -- An app is sort of like a session, but for programs.
 CREATE TABLE IF NOT EXISTS apps (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(), -- client_id
-    last_accessed TIMESTAMP, -- Deleted when app hasn't been used for a week
     scopes TEXT[] DEFAULT '{read}',
     redirect_uris TEXT[] DEFAULT '{urn:ietf:wg:oauth:2.0:oob}',
     app_secret TEXT UNIQUE, -- client_secret
