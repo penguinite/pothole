@@ -19,12 +19,18 @@
 ## and it also stores some procedures related to configuration.
 import std/os, iniplus
 
-proc getConfigFilename*(): string =
+proc getConfigFilename*(c = "pothole.conf"): string =
   ## Returns the filename for the pothole config
-  result = "pothole.conf"
+  runnableExamples:
+    ## pothole
+    let config = parseFile(getConfigFilename())
+
+    ## potholectl
+    proc example_command(config = "pothole.conf"): int =
+      let conf = parseFile(getConfigFilename(config))
+      return 0
   if existsEnv("POTHOLE_CONFIG"):
     result = getEnv("POTHOLE_CONFIG")
-  return result
 
 ## This is a config file pool.
 ## Mummy is a multi-threaded database server, and so using global variables is a bad idea.
