@@ -38,43 +38,43 @@ proc getBoosts*(db: DbConn, id: string): Table[PostPrivacyLevel, seq[string]] =
   ## Result consists of a table where the keys are the specific levels and
   ## the value is a sequence of boosters associated with this level.
   for row in db.getAllRows(sql"SELECT uid,level FROM boosts WHERE pid = ?;", id):
-    result[toPrivacyLevelFromDb(row[1])].add(row[0])
+    result[toLevel(row[1])].add(row[0])
 
 proc getBoostsQuick*(db: DbConn, id: string): seq[string] =
-  ## Returns a list of boosters for a specific post
-  for row in db.getAllRows(sql"SELECT uid,level FROM boosts WHERE pid = ?;", id):
+  ## Returns a list of boosters for a specific post.
+  for row in db.getAllRows(sql"SELECT uid FROM boosts WHERE pid = ?;", id):
     result.add(row[0])
 
-proc isBoostable*(db: DbConn, uid, pid: string): bool =
+proc isBoostable*(db: DbConn, pid: string): bool =
   ## Checks if the post can be boosted.
   ##
   ## Currently, this only checks if the post you're trying to boost
   ## is either a public or unlisted post.
   # TODO: This might be wrong.
-  return toPrivacyLevelFromDb(db.getRow(sql"SELECT level FROM posts WHERE id = ?;", pid)[0]) in [Public, Unlisted]
+  toLevel(db.getRow(sql"SELECT level FROM posts WHERE id = ?;", pid)[0]) in [Public, Unlisted]
 
-proc hasAnyBoost*(db: DbConn, pid,uid: string): bool =
-  ## Checks if a post has a boost. The specific level doesn't matter tho
+proc userBoosted*(db: DbConn, uid, pid: string): bool =
+  ## Check if a user has boosted a post
   has(db.getRow(sql"SELECT 0 FROM boosts WHERE pid = ? AND uid = ?;", pid, uid))
 
 proc removeBoost*(db: DbConn, pid,uid: string) =
   ## Removes a boost from the database
   db.exec(sql"DELETE FROM boosts WHERE pid = ? AND uid = ?;",pid,uid)
 
-proc hasBoost*(db: DbConn, pid,uid: string, level: PostPrivacyLevel): bool =
-  ## Checks if a post has a boost. Everything must match.
-  has(db.getRow(sql"SELECT level FROM boosts WHERE pid = ? AND uid = ? AND level = ?;", pid, uid, toDbString(level)))
+proc userBoostedLevel*(db: DbConn, pid,uid: string, level: PostPrivacyLevel): bool =
+  ## Checks if a post has a boost by a specific user, with a specific level too.
+  has(db.getRow(sql"SELECT 0 FROM boosts WHERE pid = ? AND uid = ? AND level = ?;", pid, uid, !$(level)))
 
 proc addBoost*(db: DbConn, pid,uid: string, level: PostPrivacyLevel) =
   ## Adds an individual boost
   
   # Check if a boost already exists before
-  #
+  # &
   # Filter out invalid levels.
   # You can't have a boost limited to some unknown people
   # and a "private boost" (that is just a bookmark lol)
-  if not db.hasAnyBoost(pid, uid) and level notin {Limited, Private}:
-    db.exec(sql"INSERT INTO boosts (pid, uid, level) VALUES (?,?,?);",pid,uid,toDbString(level))
+  if not db.userBoosted(uid, pid) and level notin {Limited, Private}:
+    db.exec(sql"INSERT INTO boosts (pid, uid, level) VALUES (?,?,?);",pid,uid, !$(level))
 
 proc getNumOfBoosts*(db: DbConn, pid: string): int =
   for i in db.getAllRows(sql"SELECT 0 FROM boosts WHERE pid = ?;", pid):

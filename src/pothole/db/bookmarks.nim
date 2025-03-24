@@ -23,14 +23,19 @@ proc bookmarkExists*(db: DbConn, user, post: string): bool =
   has(db.getRow(sql"SELECT 0 FROM bookmarks WHERE uid = ? AND pid = ?;", user, post))
 
 proc bookmarkPost*(db: DbConn, user, post: string) =
-  if not db.bookmarkExists(user, post):
-    db.exec(sql"INSERT INTO bookmarks VALUES (?,?);",post, user)
+  db.exec(sql"INSERT INTO bookmarks VALUES (?,?);", post, user)
 
 proc getBookmarks*(db: DbConn, user: string, limit = 20): seq[string] =
+  ## Returns a sequence of post IDs that a user has bookmarked.
+  ## 
+  ## Note: This has a limit, by default 20.
   for row in db.getAllRows(sql("SELECT pid FROM bookmarks WHERE uid = ? LIMIT " & $limit & ";"), user):
     result.add(row[0])
 
 proc getAllBookmarks*(db: DbConn, user: string): seq[string] =
+  ## Returns a sequence of post IDs that a user has bookmarked.
+  ## 
+  ## Note: This has NO limit, do not use this please.
   for row in db.getAllRows(sql"SELECT pid FROM bookmarks WHERE uid = ?;", user):
     result.add(row[0])
 

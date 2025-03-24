@@ -23,64 +23,55 @@
 import private/utils, apps, users, ../strextra
 
 # From somewhere in the standard library
-import std/strutils, db_connector/db_postgres
+import std/[strutils, times], db_connector/db_postgres
 
 # From elsewhere (third-party libraries)
 import rng
 
 proc getSpecificAuthCode*(db: DbConn, user, client: string): string =
-  ## Returns a specific auth code.
   db.getRow(sql"SELECT id FROM auth_codes WHERE uid = ? AND cid = ?;", user, client)[0]
 
 proc authCodeExists*(db: DbConn, user, client: string): bool =
-  has(db.getRow(sql"SELECT id FROM auth_codes WHERE uid = ? AND cid = ?;", user, client))
+  has(db.getRow(sql"SELECT 0 FROM auth_codes WHERE uid = ? AND cid = ?;", user, client))
 
 proc authCodeExists*(db: DbConn, id: string): bool =
-  has(db.getRow(sql"SELECT id FROM auth_codes WHERE id = ?;", id))
+  has(db.getRow(sql"SELECT 0 FROM auth_codes WHERE id = ?;", id))
 
-proc createAuthCode*(db: DbConn, user, client, scopes: seq[string]): string =
-  ## Creates a code
-  if db.authCodeExists(user, client):
-    raise newException(DbError, "Code already exists for user \"" & user & "\" and client \"" & client & "\"")
-
+proc createAuthCode*(db: DbConn, user, client: string, scopes: seq[string]): string =
+  ## Creates an auth code for a user and returns it.
   result = randstr(32)
-  while db.authCodeExists(result):
-    result = randstr(32)
+  db.exec(
+    sql"INSERT INTO auth_codes VALUES (?,?,?,?);",
+    result, user, client, !$(scopes)
+  )
+
+proc getCodeScopes*(db: DbConn, id: string): seq[string] =
+  toStrSeq(db.getRow(sql"SELECT scopes FROM auth_codes WHERE id = ?;", id)[0])
   
-  db.exec(sql"INSERT INTO auth_codes VALUES (?,?,?,?);", result, user, client, toDbString(scopes))
-  return result
-
 proc codeHasScopes*(db: DbConn, id:string, scopes: seq[string]): bool =
-  let appScopes = split(db.getRow(sql"SELECT scopes FROM auth_codes WHERE id = ?;", id)[0], ',')
-  result = false
-
+  let appScopes = db.getCodeScopes(id)
   for scope in scopes:
     for codeScope in appScopes:
       if codeScope == scope or codeScope == scope.returnStartOrScope():
         result = true
         break
-  
-  return result
-
-proc getScopesFromCode*(db: DbConn, id: string): seq[string] =
-  split(db.getRow(sql"SELECT scopes FROM auth_codes WHERE id = ?;", id)[0], ',')
 
 proc deleteAuthCode*(db: DbConn, id: string) =
-  ## Deletes an authentication code
-  db.exec(sql"""
-DELETE FROM oauth WHERE code = ?;
-DELETE FROM auth_codes WHERE id = ?;
-""", id, id)
+  db.exec(sql"DELETE FROM auth_codes WHERE id = ?;", id)
 
 proc getUserFromAuthCode*(db: DbConn, id: string): string =
-  ## Returns user id when given auth code
+  ## Returns user id associated with an auth code
   db.getRow(sql"SELECT uid FROM auth_codes WHERE id = ?;", id)[0]
 
 proc getAppFromAuthCode*(db: DbConn, id: string): string =
+  ## Returns app id associated with an auth code
   db.getRow(sql"SELECT cid FROM auth_codes WHERE id = ?;", id)[0]
 
+proc getAuthCodeDate*(db: DbConn, id: string): DateTime =
+  toDate(db.getRow(sql"SELECT date FROM auth_codes WHERE id = ?;", id)[0])
+
 proc authCodeValid*(db: DbConn, id: string): bool =
-  ## Does some extra checks in addition to authCodeExists()
+  ## Checks if an auth code is actually valid and can be used.
   # Obviously check if the auth code exists first.
   if not db.authCodeExists(id):
     return false
@@ -100,33 +91,16 @@ proc authCodeValid*(db: DbConn, id: string): bool =
   if db.getUserFromAuthCode(id) == "null":
     return false
 
+  # Check if the code is a day old.
+  # if it is a day old, then it's invalid. (And should be deleted at some point)
+  if now().utc - db.getAuthCodeDate(id) == initDuration(days = 1):
+    return false
+
   # If all our checks succeed then it has to be a valid auth code.
   return true
 
 proc cleanupCodes*(db: DbConn) =
-  ## Purge any codes that are invalid.
-  for row in db.getAllRows(sql"SELECT id FROM auth_codes;"):
+  ## Purge any invalid authentication codes
+  for row in db.getAllRows(sql"SELECT id,date FROM auth_codes;"):
     if not db.authCodeValid(row[0]):
       db.deleteAuthCode(row[0])
-
-proc cleanupCodesVerbose*(db: DbConn): seq[(string, string, string)] =
-  ## Same as cleanupCodes but it returns a list of all of the codes that were deleted.
-  ## Useful for interactive situations such as in potholectl.
-  ## The sequences consists of a tulip in the order: Auth Code Id -> User Id -> Client Id
-  for row in db.getAllRows(sql"SELECT id,uid,cid FROM auth_codes;"):
-    if not db.authCodeValid(row[0]):
-      result.add((row[0], row[1], row[2]))
-  return result
-
-proc getCodesForUser*(db: DbConn, user_id: string): seq[string] =
-  ## Returns all the valid authentication codes associated with a user
-  var purge = db.userIdExists(user_id)
-  if user_id == "null":
-    purge = true
-    
-  for row in db.getAllRows(sql"SELECT id FROM auth_codes WHERE uid = ?;", user_id):
-    if not db.clientExists(db.getAppFromAuthCode(row[0])) or purge:
-      db.deleteAuthCode(row[0])
-      continue
-    result.add row[0]
-  return result

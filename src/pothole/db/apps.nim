@@ -26,46 +26,48 @@ import std/[strutils, times]
 # From elsewhere (third-party libraries)
 import rng, db_connector/db_postgres
 
-## APIDIFF: (API Difference)
-## Apps in Pothole are handled different than by Mastodon.
-## 
-## In any version newer than v4.3:
-## - apps *CANNOT* be automatically deleted or purged at all
-## In any version older than v4.3:
-## - apps *CAN* be deleted *UNLESS* an app requests a token, in which case, it is immortal.
-## 
-## Pothole on startup however deletes any app that was last used a week ago,
-## to prevent the accumulation of dead apps that waste precious db storage.
-## Apps are considered "temporary data", meaning they can be deleted
-## at any point if they are not used frequently.
-## 
-## Other examples of "temporary data" are:
+## In the past, apps were thought of as "temporary data"
+## Meaning that if they weren't used for a week then they would be purged.
+## Nowadays, Pothole doesn't do that.
+
+## Examples of "temporary data" include:
 ## - sessions: Deleted if the session was last used a week ago.
 ## - auth codes: Deleted if the code is a day old.
 ##               See authCodeValid() in auth_codes.nim
-## 
 ## - email codes: Deleted if the code is a day old. 
 ##                See cleanupCodes() in email_codes.nim
 
-proc purgeOldApps*(db: DbConn) =
-  ## Purges any and all apps that haven't been accessed for a week.
-
-
-proc createClient*(db: DbConn, name: string, link: string = "", scopes: seq[string] = @["read"], redirect_uri: string = "urn:ietf:wg:oauth:2.0:oob"): string =
+proc createClient*(
+  db: DbConn,
+  name: string,
+  link: string = "",
+  scopes: openArray[string] = ["read"],
+  redirect_uris: openArray[string] = ["urn:ietf:wg:oauth:2.0:oob"]
+): string =
   ## Creates a client and returns its ID
+  result = rng.uuidv4()
+  db.exec(
+    sql"INSERT INTO apps VALUES (?,?,?,?,?,?);",
+    result, !$(scopes), !$(redirect_uris), randstr(), name, link
+  )
 
 proc getClientLink*(db: DbConn, id: string): string = 
+  db.getRow(sql"SELECT link FROM apps WHERE id = ?;", id)[0]
 
 proc getClientName*(db: DbConn, id: string): string = 
+  db.getRow(sql"SELECT app_name FROM apps WHERE id = ?;", id)[0]
 
 proc getClientSecret*(db: DbConn, id: string): string =
+  db.getRow(sql"SELECT app_secret FROM apps WHERE id = ?;", id)[0]
 
 proc getClientScopes*(db: DbConn, id: string): seq[string] =
+  toStrSeq(db.getRow(sql"SELECT scopes FROM apps WHERE id = ?;", id)[0])
 
-proc getClientRedirectUri*(db: DbConn, id: string): string =
+proc getClientUris*(db: DbConn, id: string): seq[string] =
+  toStrSeq(db.getRow(sql"SELECT redirect_uris FROM apps WHERE id = ?;", id)[0])
 
-proc clientExists*(db: DbConn, id: string): bool = 
-  ## Checks if a client exists (and updates its last_accessed timestamp if it does)
+proc clientExists*(db: DbConn, id: string): bool =
+  has(db.getRow(sql"SELECT 0 FROM apps WHERE id = ?;", id))
 
 proc returnStartOrScope*(s: string): string =
   if s.startsWith("read"):
@@ -100,8 +102,6 @@ proc hasScopes*(db: DbConn, id:string, scopes: seq[string]): bool =
       if appScope == scope or appScope == scope.returnStartOrScope():
         result = true
         break
-  
-  return result
 
 proc verifyScope*(scope: string): bool =
   ## Just verifies if a scope is valid or not.
@@ -141,7 +141,6 @@ proc verifyScope*(scope: string): bool =
       return list[2] in ["accounts", "reports", "domain_allows", "canonical_domain_blocks",
                         "domain_blocks", "ip_blocks", "email_domain_blocks"]
   else: discard
-
   return false # Return false as a fallback
 
 proc humanizeScope*(scope: string): string =

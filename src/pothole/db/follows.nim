@@ -16,44 +16,30 @@
 #
 # db/follows.nim:
 ## This module contains all database logic for handling followers, following and so on.
+## This module handles mostly following users, you can follow tags in the tag.nim module
 import users, tag, ../[strextra, shared], std/[sequtils, times], db_connector/db_postgres
 
-proc getFollowersQuick*(db: DbConn, user: string): seq[string] =
-  ## Returns a set of handles that follow a specific user
-  for row in db.getAllRows(sql"SELECT follower FROM follows WHERE following = ? AND approved = true;", user):
-    result.add(db.getHandleFromId(row[0]))
-
-proc getFollowingAsIDQuick*(db: DbConn, user: string, limit = 20): seq[string] =
-  ## Returns a set of IDs that a specific user follows
-  for row in db.getAllRows(sql"SELECT following FROM follows WHERE follower = ? AND approved = true LIMIT ?;", user, $limit):
+proc getFollowers*(db: DbConn, user: string): seq[string] =
+  ## Returns a set of User IDs followed by a specific user.
+  for row in db.getAllRows(sql"SELECT follower FROM user_follows WHERE following = ? AND approved = true;", user):
     result.add(row[0])
 
-proc getFollowingQuick*(db: DbConn, user: string, limit = 20): seq[string] =
-  ## Returns a set of handles that a specific user follows
-  for row in db.getAllRows(sql"SELECT following FROM follows WHERE follower = ? AND approved = true LIMIT ?;", user, $limit):
-    result.add(db.getHandleFromId(row[0]))
-
-proc getFollowers*(db: DbConn, user: string): seq[User] =
-  ## Returns a set of User objects that follow a specific usr
-  for row in db.getAllRows(sql"SELECT follower FROM follows WHERE following = ? AND approved = true;", user):
-    result.add(db.getUserById(row[0]))
-
-proc getFollowing*(db: DbConn, user: string): seq[User] =
-  ## Returns a set of User objects that a specific user follows
-  for row in db.getAllRows(sql"SELECT following FROM follows WHERE follower = ? AND approved = true;", user):
-    result.add(db.getUserById(row[0]))
+proc getFollowing*(db: DbConn, user: string): seq[string] =
+  ## Returns a set of User IDs that a specific user follows.
+  for row in db.getAllRows(sql"SELECT following FROM user_follows WHERE follower = ? AND approved = true;", user):
+    result.add(row[0])
 
 proc getFollowersCount*(db: DbConn, user: string): int =
   ## Returns how many people follow this user in a number
-  len(db.getAllRows(sql"SELECT approved FROM follows WHERE following = ? AND approved = true;", user))
+  len(db.getAllRows(sql"SELECT 0 FROM user_follows WHERE following = ? AND approved = true;", user))
 
 proc getFollowingCount*(db: DbConn, user: string): int =
   ## Returns how many people this user follows in a number
-  len(db.getAllRows(sql"SELECT approved FROM follows WHERE follower = ? AND approved = true;", user))
+  len(db.getAllRows(sql"SELECT 0 FROM user_follows WHERE follower = ? AND approved = true;", user))
 
 proc getFollowReqCount*(db: DbConn, user: string): int =
   ## Returns how many pending follow requests a user has.
-  len(db.getAllRows(sql"SELECT approved FROM follows WHERE following = ? AND approved = false;", user))
+  len(db.getAllRows(sql"SELECT 0 FROM user_follows WHERE following = ? AND approved = false;", user))
 
 proc getFollowStatus*(db: DbConn, follower, following: string): FollowStatus =
   # It's small details like these that break the database logic.
@@ -62,7 +48,7 @@ proc getFollowStatus*(db: DbConn, follower, following: string): FollowStatus =
   # Thankfully, i've been through this rigamarole before,
   # so i already knew boolean handling was garbage
   result = case db.getRow(
-      sql"SELECT approved FROM follows WHERE follower = ? AND following = ?;", 
+      sql"SELECT approved FROM user_follows WHERE follower = ? AND following = ?;", 
       follower, following
     )[0]:
     of "t": PendingFollowRequest
@@ -70,26 +56,13 @@ proc getFollowStatus*(db: DbConn, follower, following: string): FollowStatus =
     else: NoFollowRequest
 
 proc followUser*(db: DbConn, follower, following: string, approved: bool = true) =
-  ## Follows a user (THEY ALL MUST BE IN IDS)
-  if not db.userIdExists(follower) or not db.userIdExists(following):
-    return # Since users don't exist, we just leave.
-
-  if db.getFollowStatus(follower, following) != NoFollowRequest:
-    # Follow request already exists and is either pending or accepted.
-    # In that case, just return.
-    return
-  
-  db.exec(
-    sql"INSERT INTO follows VALUES (?, ?, ?)",
-    follower, following, $approved
-  )
+  ## Follows a user, every string here has to be an ID.
+  ## Remember to check if the users exist and if the follower has already sent a request earlier.
+  db.exec(sql"INSERT INTO follows VALUES (?, ?, ?)", follower, following, $approved)
 
 proc unfollowUser*(db: DbConn, follower, following: string) =
-  ## Unfollows a user
-  db.exec(
-    sql"DELETE FROM follows WHERE follower = ? AND following = ?;",
-    follower, following
-  )
+  ## Unfollows a user, every string here has to be an ID.
+  db.exec(sql"DELETE FROM follows WHERE follower = ? AND following = ?;",follower, following)
 
 # TODO: Move the following code into its own module.
 
@@ -97,7 +70,7 @@ proc getHomeTimeline*(db: DbConn, user: string, limit: var int = 20): seq[string
   ## Returns a list of IDs to posts sent by users that `user` follows or in hashtags that `user` follows.
   # Let's see who this user follows 
   var
-    following = db.getFollowingAsIDQuick(user, limit)
+    following = db.getFollowing(user)
     followingTags = db.getTagsFollowedByUser(user, limit)
   
   # First we check to see if the limit is realistic

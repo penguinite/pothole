@@ -63,7 +63,7 @@ after build:
 # Dependencies
 requires "nim >= 2.0.0"
 requires "nimcrypto >= 0.5.4"
-requires "rng >= 0.1.0"
+requires "rng >= 0.2.0"
 requires "iniplus#d9509566d442f597547f8c8aa9bd7599c71a93ff"
 requires "temple >= 0.2.3"
 requires "db_connector >= 0.1.0"

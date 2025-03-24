@@ -19,13 +19,11 @@
 ## This module does not handle sending email verification codes,
 ## there is a separate module `pothole/email.nim` to do this exact job.
 
-# TODO: Merge this module with the email sending module.
-
 # From Pothole
 import private/utils, users, ../strextra
 
 # From somewhere in the standard library
-import std/[times]
+import std/times
 
 # From elsewhere (third-party libraries)
 import rng, db_connector/db_postgres
@@ -50,20 +48,17 @@ proc deleteEmailCodeByUser*(db: DbConn, user: string) =
 
 proc createEmailCode*(db: DbConn, user: string): string =
   result = randstr(32)
-  
+
   # Check if another code already exists for this user first.
   # And delete it.
-  let row = db.getRow(sql"SELECT id FROM email_codes WHERE uid = ?;", user)
-  if has(row):
-    db.deleteEmailCode(row[0])
-    result = randstr(32)
+  if has(db.getRow(sql"SELECT 0 FROM email_codes WHERE uid = ?;", user)):
+    db.deleteEmailCodeByUser(user)
 
-  db.exec(sql"INSERT INTO email_codes VALUES (?,?,?);", result, user, utc(now()).toDbString())
+  db.exec(sql"INSERT INTO email_codes VALUES (?,?);", result, user)
 
 proc cleanupCodes*(db: DbConn) =
   for row in db.getAllRows(sql"SELECT id,uid,date FROM email_codes;"):
-    if now().utc - toDateFromDb(row[2]) == initDuration(days = 1):
+    if now().utc - toDate(row[2]) == initDuration(days = 1):
       db.deleteEmailCode(row[0])
-    
     if not db.userIdExists(row[1]) or row[1] == "null":
       db.deleteEmailCode(row[0])

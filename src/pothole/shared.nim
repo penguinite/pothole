@@ -51,7 +51,11 @@ type
     NoFollowRequest, PendingFollowRequest, AcceptedFollowRequest
 
   PostPrivacyLevel* = enum
-    Public, Unlisted, FollowersOnly, Limited, Private
+    Public = "0"
+    Unlisted = "1"
+    FollowersOnly = "2"
+    Limited = "3"
+    Private = "4"
 
   PostContentType* = enum
     Text = "0"
@@ -97,6 +101,11 @@ type
   # What type of user, this is directly from ActivityStreams.
   UserType* = enum
     Person, Application, Organization, Group, Service
+
+  ProfileField* = object
+    key*, val*: string
+    verified: bool
+    verified_at: DateTime
 
   # User data type.
   User* = object

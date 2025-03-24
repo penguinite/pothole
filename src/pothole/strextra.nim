@@ -33,12 +33,50 @@ export strutils
 
 template rowParseBool*(str: string) = return str == "t"
 
-func parseBool*(str: string): bool
-  {.deprecated: "Use pothole/strextra.rowParseBool for db-related logic, std/strutils.parseBool() for everything else".} =
-  case str.toLowerAscii():
-  of "y", "yes", "true", "1", "on", "t": return true
-  of "n", "no", "false", "0", "off", "f", "": return false
+func basicEscape(s: string): string =
+  for ch in s:
+    case ch:
+    of '\\',',','"': result.add "\\" & ch
+    else: result.add ch
 
+func `!$`*(s: openArray[string]): string =
+  ## Converts an openArray[string] into a simple string
+  ## suitable for inserting into a database.
+  for i in s:
+    result.add('\"' & basicEscape(i) & "\",")
+  result = '{' & result[0..^2] & '}' 
+
+func toStrSeq*(s: string): seq[string] =
+  ## Converts a postgres string array into a real sequence.
+  var
+    tmp = ""
+    backslash = false
+    inString = false
+  for ch in s[1..^2]:
+    # We are dealing with: "a,",b
+    if backslash:
+      tmp.add(ch)
+      backslash = false
+      continue
+
+    if inString:
+
+      case ch:
+      of '"': inString = false
+      of '\\': backslash = true
+      else: tmp.add(ch)
+    else:
+      case ch:
+      of '"': inString = true
+      of '\\': backslash = true
+      of ',':
+        result.add tmp
+        tmp = ""
+      else: tmp.add ch
+
+  if tmp != "":
+    result.add(tmp)
+  
 func smartSplit*(s: string, specialChar: char = '&'): seq[string] =
   ## A split function that is both aware of quotes and backslashes.
   ## Aware, as in, it won't split if it sees the specialCharacter surrounded by quotes, or backslashed.
@@ -64,12 +102,9 @@ func smartSplit*(s: string, specialChar: char = '&'): seq[string] =
       if backslash:
         tmp.add(ch)
         backslash = false
-        continue
-
-      if quoted:
-        quoted = false
       else:
-        quoted = true      
+        if quoted: quoted = false
+        else: quoted = true      
     else:
       # if the character we are currently parsing is the special character then
       # check we're not in backslash or quote mode, and if not
@@ -78,7 +113,6 @@ func smartSplit*(s: string, specialChar: char = '&'): seq[string] =
         if backslash or quoted:
           tmp.add(ch)
           continue
-
         result.add(tmp)
         tmp = ""
         continue
@@ -88,24 +122,11 @@ func smartSplit*(s: string, specialChar: char = '&'): seq[string] =
         continue
       tmp.add(ch)
   
-  # If tmp is not empty then split!
+  # If tmp is not empty then split once more!
+  # This is to make sure that we're not missing any data.
+  # And that's it!
   if tmp != "":
     result.add(tmp)
-
-  # Finally, the good part, return result.
-  return result
-
-func escapeCommas*(str: string): string = 
-  ## A proc that escapes away commas only.
-  ## Use toString, toSeq or whatever else you need.
-  ## This is a bit low-level
-  if isEmptyOrWhitespace(str): return str
-  for ch in str:
-    # Comma handling
-    case ch:
-    of ',': result.add("\\,")
-    else: result.add(ch)
-  return result
 
 func htmlEscape*(pre_s: string): string =
   ## Very basic HTML escaping function.
@@ -126,81 +147,22 @@ func htmlEscape*(pre_s: string): string =
     else:
       result.add(ch)
 
-## This next section provides the database compatability procedures
-## That were briefly mentioned in the documentation for this module
-## 
-## The only reason they weren't higher up is because I think they're
-## boring and repetitive for the most part.
-
-func toDbString*(sequence: seq[string]): string =
-  ## Converts a string sequence into a database-compatible string
-  for item in sequence:
-    result.add(escapeCommas(item) & ",")
-  if len(result) != 0:
-    result = result[0..^2]
-  return result
-
-func toDbString*(pl: PostPrivacyLevel): string =
-  ## Converts a post privacy level into a database-compatible string
-  result = case pl:
-    of Public: "0"
-    of Unlisted: "1"
-    of FollowersOnly: "2"
-    of Private: "3"
-    of Limited: "4"
-
-func toDbString*(date: DateTime): string = 
+func `!$`*(date: DateTime): string = 
   ## Converts a date into a database-compatible string
   return format(date, "yyyy-MM-dd HH:mm:ss")
 
-proc toDateFromDb*(row: string): DateTime =
+proc toDate*(row: string): DateTime =
   ## Creates a date out of a database row
   return parse(row, "yyyy-MM-dd HH:mm:ss", utc())
 
-func toPrivacyLevelFromDb*(row: string): PostPrivacyLevel =
-  ## Creats a post privacy level object out of a database row
-  result = case row:
-    of "0": Public
-    of "1": Unlisted
-    of "2": FollowersOnly
-    of "3": Private
-    of "4": Limited
-    else: raise newException(CatchableError, "toPrivacyLevelFromDb: Unknown privacy-level \"" & row & "\"")
+func `!$`(pl: PostPrivacyLevel): string =
+  return $(pl)
 
-func toContentTypeFromDb*(row: string): PostContentType =
-  ## A procedure to convert a string (fetched from the Db)
-  ## to a PostContentType
-  result = case row:
-    of "0": Text
-    of "1": Poll
-    of "2": Media
-    of "4": Tag
-    else: raise newException(CatchableError, "toContentTypeFromDb: Unknown content-type \"" & row & "\"")
-  
-func toKdfFromDb*(num: string): KDF =
-  ## Converts a string to a KDF object.
-  ## You can use this instead of IntToKDF for when you are dealing with database rows.
-  ## (Which, in db_postgres, consist of seq[string])
-  result = PBKDF_HMAC_SHA512
-
-func toHumanString*(kdf: KDF): string =
-  ## Converts a KDF into a human-readable string.
-  result = "PBKDF_HMAC_SHA512 (210000 iterations, 32 outlength)"
-
-func toUserType*(s: string): UserType =
-  ## Converts a plain string into a UserType
-  result = case s:
-    of "Person": Person
-    of "Application": Application
-    of "Organization": Organization
-    of "Group": Group
-    of "Service": Service
-    else: Person
-
-func toString*(t: UserType): string =
-  result = case t:
-    of Person: "Person"
-    of Application: "Application"
-    of Organization: "Organization"
-    of Group: "Group"
-    of Service: "Service"
+func toLevel*(s: string): PostPrivacyLevel =
+  case s:
+  of "0": return Public
+  of "1": return Unlisted
+  of "2": return FollowersOnly
+  of "3": return Limited
+  of "4": return Private
+  else: raise newException(CatchableError, "Unknown string passed to strextra.toLevel(): " & s)

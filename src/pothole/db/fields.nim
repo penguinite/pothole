@@ -22,20 +22,19 @@
 ## deal with parsing arrays from a column again.
 ## 
 ## Besides, more tables never hurt anyone. Right?
-import private/utils, ../strextra
+import private/utils, ../[strextra, shared]
 import std/[times]
 import db_connector/db_postgres
 
-proc getFields*(db: DbConn, user: string): seq[(string, string, bool, DateTime)] =
+proc getFields*(db: DbConn, user: string): seq[ProfileField] =
   ## Returns the profile fields of a specific user.
-  ## The first string is the key, the second is the value and the boolean is the verification status.
-  for row in db.getAllRows(sql"SELECT * FROM fields WHERE uid = ?;", user):
+  for row in db.getAllRows(sql"SELECT key,val,verified,verified_at FROM fields WHERE uid = ?;", user):
     result.add(
-      (
-        row[0],
-        row[1],
-        row[2] == "t",
-        toDateFromDb(row[3])
+      ProfileField(
+        key: row[0],
+        val: row[1],
+        verified: row[2] == "t",
+        verified_at: row[3].toDate()
       )
     )
 
@@ -43,27 +42,22 @@ proc fieldExists*(db: DbConn, user, key, value: string): bool =
   ## Checks if a field exists
   has(db.getRow(sql"SELECT 0 FROM fields WHERE uid = ? AND key = ? AND value = ?;", user, key, value))
 
-proc insertField*(db: DbConn, user, key, value: string, verified: bool = false) =
+proc insertField*(db: DbConn, user, key, value: string) =
   ## Inserts a profile field into the database
-  
-  # Only insert a field if this exact one doesn't exist already
-  if not db.fieldExists(user, key, value):
-    db.exec(sql"INSERT INTO fields VALUES (?, ?, ?, ?);", key, value, user, verified)
+  db.exec(sql"INSERT INTO fields (uid, key, val) VALUES (?,?,?);", user, key, value)
 
-proc removeField*(db: DbConn, user, key, val: string) =
+proc removeField*(db: DbConn, user, key, value: string) =
   ## Removes a profile field
-  db.exec(sql"DELETE FROM fields WHERE uid = ? AND key = ? AND value = ?;", user, key, val)
+  db.exec(sql"DELETE FROM fields WHERE uid = ? AND key = ? AND value = ?;", user, key, value)
 
-proc verifyField*(db: DbConn, user, key, val: string, date: DateTime = now().utc) =
+proc verifyField*(db: DbConn, user, key, value: string, date: DateTime = now().utc) =
   ## Turns a regular field into a "verified" field
   
   # Only verify if a field exists in the first place
-  if db.fieldExists(user, key, val):
-    db.exec(sql"UPDATE fields SET verified = true, verified_at = ?, WHERE uid = ? AND key = ? AND value = ?;", toDbString(date), user, key, val)
+  db.exec(sql"UPDATE fields SET verified = true, verified_at = ?, WHERE uid = ? AND key = ? AND value = ?;", !$(date), user, key, value)
 
-proc unverifyField*(db: DbConn, user, key, val: string) =
+proc unverifyField*(db: DbConn, user, key, value: string) =
   ## Turns a "verified" field into a regular field.
   
   # Only unverify if a field exists in the first place
-  if db.fieldExists(user, key, val):
-    db.exec(sql"UPDATE fields SET verified = false WHERE uid = ? AND key = ? AND value = ?;", user, key, val)
+  db.exec(sql"UPDATE fields SET verified = false WHERE uid = ? AND key = ? AND value = ?;", user, key, value)
