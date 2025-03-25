@@ -39,43 +39,27 @@ import db_connector/db_postgres, rng
 # Update any other columns accordingly (Setting latest to false)
 # Create a new "post content" row in the db and set it accordingly.
 # Update any other attributes accordingly (For example, the client, the modified bool, the recipients, the level)
-# 
-# Game plan when post is edited (For non-archived types of content, such as polls):
-# Remove existing content row
-# Create new one
-
-proc newPost*(sender: string, content: seq[PostContent], recipients: seq[string] = @[],replyto = "", written = now().utc, modified = false, local = true,level = Public, id = randstr(32), client = "0",reactions = initTable[string,seq[string]](),boosts = initTable[string,seq[string]]()): Post = Post(id: id,recipients: recipients,sender: sender,replyto: replyto,content: content,written: written,modified: modified,local: local,client: client,level: level,reactions: reactions,boosts: boosts)
-proc text*(content: string, date: DateTime = now().utc, format = "txt"): PostContent = PostContent(kind: Text, text: content, published: date, format: format)
 
 proc constructPost*(db: DbConn, row: Row): Post =
   ## Constructs a post out of a database row, minimally.
   ## This means no reactions, no boosts
-  ## and no content.
-  
+  ## and no content.  
   var i: int = -1;
-
   for key,value in result.fieldPairs:
     # Skip the fields that are processed by *other* bits of code.
     when result.get(key) isnot Table[string, seq[string]] and result.get(key) isnot seq[PostContent]:
       inc(i)
 
     when result.get(key) is bool:
-      result.get(key) = row[i] == "t"
+      result.get(key) = (row[i] == "t")
     when result.get(key) is string:
       result.get(key) = row[i]
     when result.get(key) is seq[string]:
-      result.get(key) = split(row[i], ",")
-
-      # the split() proc sometimes creates items in the sequence
-      # even when there isn't. So this bit of code manually
-      # clears the list if two specific conditions are met.
-      if len(result.get(key)) == 1 and result.get(key)[0] == "":
-        result.get(key) = @[]
+      result.get(key) = toStrSeq(row[i])
     when result.get(key) is DateTime:
-      result.get(key) = toDateFromDb(row[i])
+      result.get(key) = toDate(row[i])
     when result.get(key) is PostPrivacyLevel:
-      result.get(key) = toPrivacyLevelFromDb(row[i])
-  return result
+      result.get(key) = toLevel(row[i])
 
 proc addPost*(db: DbConn, post: Post) =
   ## A function add a post into the database

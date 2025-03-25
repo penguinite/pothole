@@ -228,8 +228,6 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
     -- a sub-scope. (For fine control of permissions)
     -- This is an important security feature.
     scopes TEXT[] DEFAULT '{read}',
-    -- Anything that hasn't been used for a week will be deleted.
-    last_use TIMESTAMP NOT NULL,
     foreign key (cid) references apps(id),
     foreign key (uid) references users(id)
 );

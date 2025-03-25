@@ -17,7 +17,7 @@
 # db/follows.nim:
 ## This module contains all database logic for handling followers, following and so on.
 ## This module handles mostly following users, you can follow tags in the tag.nim module
-import users, tag, ../[strextra, shared], std/[sequtils, times], db_connector/db_postgres
+import ../shared, db_connector/db_postgres
 
 proc getFollowers*(db: DbConn, user: string): seq[string] =
   ## Returns a set of User IDs followed by a specific user.
@@ -27,6 +27,12 @@ proc getFollowers*(db: DbConn, user: string): seq[string] =
 proc getFollowing*(db: DbConn, user: string): seq[string] =
   ## Returns a set of User IDs that a specific user follows.
   for row in db.getAllRows(sql"SELECT following FROM user_follows WHERE follower = ? AND approved = true;", user):
+    result.add(row[0])
+
+proc getFollowing*(db: DbConn, user: string, limit = 20): seq[string] =
+  ## Returns a set of User IDs that a specific user follows.
+  ## This procedure has a limit of 20 by default
+  for row in db.getAllRows(sql"SELECT following FROM user_follows WHERE follower = ? AND approved = true LIMIT ?;", user, $limit):
     result.add(row[0])
 
 proc getFollowersCount*(db: DbConn, user: string): int =
@@ -48,8 +54,9 @@ proc getFollowStatus*(db: DbConn, follower, following: string): FollowStatus =
   # Thankfully, i've been through this rigamarole before,
   # so i already knew boolean handling was garbage
   result = case db.getRow(
-      sql"SELECT approved FROM user_follows WHERE follower = ? AND following = ?;", 
-      follower, following
+      sql"SELECT approved FROM user_follows WHERE follower = ? AND following = ?;",
+      follower,
+      following
     )[0]:
     of "t": PendingFollowRequest
     of "f": AcceptedFollowRequest
@@ -65,57 +72,6 @@ proc unfollowUser*(db: DbConn, follower, following: string) =
   db.exec(sql"DELETE FROM follows WHERE follower = ? AND following = ?;",follower, following)
 
 # TODO: Move the following code into its own module.
-
-proc getHomeTimeline*(db: DbConn, user: string, limit: var int = 20): seq[string] =
-  ## Returns a list of IDs to posts sent by users that `user` follows or in hashtags that `user` follows.
-  # Let's see who this user follows 
-  var
-    following = db.getFollowing(user)
-    followingTags = db.getTagsFollowedByUser(user, limit)
-  
-  # First we check to see if the limit is realistic
-  # (ie. do we have enough posts to fill it)
-  # If not then we just reset the limit to something sane.
-
-  # Note: Due to a circular dependency on posts, we have to use this
-  # Instead of calling getNumTotalPosts()
-  var t_limit: int = 0
-  for x in db.getAllRows(sql("SELECT 0 FROM posts;")):
-      inc(t_limit)
-
-  if limit > t_limit:
-    limit = t_limit
-
-  # We will start by fetching X number of posts from the db
-  # (where X is the limit, oh and the order is chronological, according to *creation* date.)
-  # And then checking if its creator was followed or if it has a hashtag we follow.
-  #
-  # This seemed like the best solution at the time given the circumstances
-  # But if it isn't then whoopsie! We will make another one!
-  # TODO: Help.
-  var
-    last_date = now().utc
-    flag = false
-  while len(result) < limit and flag == false:
-    for row in db.getAllRows(sql"SELECT id,sender,written FROM posts WHERE date(written) >= ? ORDER BY written ASC LIMIT ?", toDbString(last_date), $limit):
-      if row[1] in following:
-        result.add row[0]
-        continue
-      
-      let tags = db.getPostTags(row[0])
-      for tag in followingTags:
-        if tag in tags:
-          result.add row[0]
-          continue
-    flag = true
-    result = result.deduplicate()
-  
-  # TODO: This does not include posts that have boosts... Too bad!
-  return result
-
-proc getTagTimeline*(db: DbConn, tag: string, limit: var int = 20, local = true, remote = true): seq[string] =
-  ## Returns a list of IDs to posts in a hashtag.
-  return result
 
 ## Test suite!
 #[

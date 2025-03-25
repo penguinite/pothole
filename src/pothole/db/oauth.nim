@@ -15,76 +15,36 @@
 # along with Pothole. If not, see <https://www.gnu.org/licenses/>. 
 #
 # db/oauth.nim:
-## This module contains all database logic for handling oauth tokens and code generation.
-## Such as generating them, deleting them, verifying them and whatnot.
+## This module contains all database logic for handling oauth tokens.
 
 # From Pothole
-import private/utils, auth_codes, apps, ../strextra
-
-# From somewhere in the standard library
-import std/[times]
+import private/utils ../strextra
 
 # From third-party libraries
 import rng, db_connector/db_postgres
 
-proc updateTimestampForOAuth*(db: DbConn, id: string) = 
-  if not has(db.getRow(sql"SELECT id FROM oauth WHERE id = ?;", id)):
-    return
-  db.exec(sql"UPDATE oauth SET last_use = ? WHERE id = ?;", utc(now()).toDbString(), id)
-
-proc purgeOldOauthTokens*(db: DbConn) =
-  for row in db.getAllRows(sql"SELECT id,code,cid,last_use FROM oauth;"):
-    if row[2] != "" and not db.authCodeExists(row[2]):
-      db.exec(sql"DELETE FROM oauth WHERE id = ?;", row[1])
-      continue
-
-    if not db.clientExists(row[3]):
-      db.exec(sql"DELETE FROM oauth WHERE id = ?;", row[1])
-      continue
-
-    if now().utc - toDateFromDb(row[4]) == initDuration(weeks = 1):
-      db.exec(sql"DELETE FROM oauth WHERE id = ?;", row[1])
-
 proc tokenExists*(db: DbConn, id: string): bool =
-  db.updateTimestampForOAuth(id)
-  has(db.getRow(sql"SELECT id FROM oauth WHERE id = ?;", id))
+  has(db.getRow(sql"SELECT 0 FROM oauth_tokens WHERE id = ?;", id))
 
-proc tokenUsesCode*(db: DbConn, id: string): bool =
-  parseBool(db.getRow(sql"SELECT uses_code FROM oauth WHERE id = ?;", id)[0])
-
-proc getTokenFromCode*(db: DbConn, code: string): string =
-  db.getRow(sql"SELECT id FROM oauth WHERE code = ?;", code)[0]
-
-proc createToken*(db: DbConn, cid: string, code: string = ""): string =
+proc createToken*(db: DbConn, client, user: string, scopes: openArray[string]): string =
   result = randstr(32)
-
-  while db.tokenExists(result):
-    result = randstr(32)
-
-  let uses_code = code != ""
-
-  if db.getTokenFromCode(code) != "":
-    return # Token already exist, we dont want a database error.
-
-  db.exec(
-    sql"INSERT INTO oauth VALUES (?,?,?,?,?);",
-    result, uses_code, code, cid, utc(now()).toDbString()
-  )
-  return result
-
-proc getTokenCode*(db: DbConn, id: string): string =
-  db.getRow(sql"SELECT code FROM oauth WHERE id = ?;", id)[0]
+  db.exec(sql"INSERT INTO oauth_tokens VALUES (?,?,?,?);", result, client, user, !$scopes)
 
 proc getTokenUser*(db: DbConn, id: string): string =
-  db.getUserFromAuthCode(db.getTokenCode(id))
+  ## Returns ID of the user associated with a token.
+  ## If this is empty, then there is no user associated with a token
+  db.getRow(sql"SELECT uid FROM oauth_tokens WHERE id = ?;", id)[0]
 
 proc getTokenApp*(db: DbConn, id: string): string =
-  db.getRow(sql"SELECT cid FROM oauth WHERE id = ?;", id)[0]
+  db.getRow(sql"SELECT cid FROM oauth_tokens WHERE id = ?;", id)[0]
+
+proc getTokenScopes*(db: DbConn, id: string): seq[string] =
+  toStrSeq(db.getRow(sql"SELECT scopes FROM oauth_tokens WHERE id = ?;", id)[0])
 
 proc deleteOAuthToken*(db: DbConn, id: string) =
-  if db.tokenUsesCode(id):
-    db.deleteAuthCode(db.getTokenCode(id))
-  db.exec(sql"DELETE FROM oauth WHERE id = ?;", id)
+  db.exec(sql"DELETE FROM oauth_tokens WHERE id = ?;", id)
 
-proc tokenMatchesClient*(db: DbConn, id, client_id: string): bool =
-  db.getRow(sql"SELECT cid FROM oauth WHERE id = ?;", id)[0] == client_id
+# TODO: Consider implement a "last_used" attribute
+# to clean up old oauth tokens.
+# Or, maybe we could consider oauth tokens to be the same as apps.
+# Which is to say, they last forever.
